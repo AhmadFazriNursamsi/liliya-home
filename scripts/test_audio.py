@@ -1,122 +1,138 @@
 #!/usr/bin/env python3
 """
 =====================================================================
-Audio Diagnostic & Calibration Tool untuk STB
+Diagnosa & Uji Coba Audio Lengkap (Speaker & Microphone)
+STB Smart Voice Assistant (BUDI)
 =====================================================================
 """
 
 import math
+import os
 import struct
 import sys
 import time
-import wave
 import numpy as np
 import pyaudio
 
-def list_devices(p):
-    print("\n--- 🎧 DAFTAR PERANGKAT AUDIO TERDETEKSI ---")
-    info = p.get_host_api_info_by_index(0)
-    numdevices = info.get('deviceCount')
+def play_test_tone(p, device_index=None):
+    print("\n[1/3] 🔊 MENGUJI SPEAKER (Memutar 3 Nada Beep Melodi)...")
+    sample_rate = 44100
+    tones = [(523, 0.15), (659, 0.15), (784, 0.25)] # C5, E5, G5
     
-    inputs = []
-    outputs = []
-    
-    for i in range(numdevices):
-        dev = p.get_device_info_by_host_api_device_index(0, i)
-        max_in = dev.get('maxInputChannels')
-        max_out = dev.get('maxOutputChannels')
-        name = dev.get('name')
-        
-        if max_in > 0:
-            inputs.append((i, name, max_in))
-        if max_out > 0:
-            outputs.append((i, name, max_out))
+    for freq, duration in tones:
+        num_samples = int(duration * sample_rate)
+        raw_audio = bytearray()
+        for i in range(num_samples):
+            env = 1.0
+            if i < 200: env = i / 200.0
+            elif i > num_samples - 200: env = (num_samples - i) / 200.0
+            sample = 0.4 * env * math.sin(2 * math.pi * freq * (i / sample_rate))
+            raw_audio += struct.pack('<h', int(sample * 32767.0))
             
-    print("\n[Mikrofon / Input Devices]:")
-    for idx, name, ch in inputs:
-        print(f"  Index [{idx}]: {name} (Channels: {ch})")
-        
-    print("\n[Speaker / Output Devices]:")
-    for idx, name, ch in outputs:
-        print(f"  Index [{idx}]: {name} (Channels: {ch})")
-    print("-" * 50)
-    return inputs, outputs
-
-def live_meter(p, input_idx=None, duration=5):
-    print(f"\n📊 UJI LEVEL SUARA MIKROFON (Live VU-Meter selama {duration} detik)...")
-    print("Silakan bicara atau diam untuk melihat level suara:")
-    print("Nilai saat diam = Ambience Noise | Nilai saat bicara = Voice Level\n")
-    
-    stream = p.open(
-        format=pyaudio.paInt16,
-        channels=1,
-        rate=16000,
-        input=True,
-        input_device_index=input_idx,
-        frames_per_buffer=1280
-    )
-    
-    start_time = time.time()
-    try:
-        while time.time() - start_time < duration:
-            data = stream.read(1280, exception_on_overflow=False)
-            arr = np.frombuffer(data, dtype=np.int16)
-            rms = np.sqrt(np.mean(arr.astype(np.float32) ** 2))
+        try:
+            stream = p.open(
+                format=pyaudio.paInt16,
+                channels=1,
+                rate=sample_rate,
+                output=True,
+                output_device_index=device_index
+            )
+            stream.write(bytes(raw_audio))
+            stream.stop_stream()
+            stream.close()
+        except Exception as e:
+            print(f"      ⚠️ Gagal output ke device {device_index}: {e}")
+            return False
             
-            bars = int(min(50, rms / 50))
-            meter = "█" * bars + "-" * (50 - bars)
-            sys.stdout.write(f"\rLevel: [{meter}] RMS: {rms:6.1f}")
-            sys.stdout.flush()
-            time.sleep(0.05)
-    finally:
-        stream.stop_stream()
-        stream.close()
-        print("\n")
+        time.sleep(0.05)
+        
+    print("      ✅ Nada berhasil dikirim ke speaker!")
+    return True
 
-def test_record_playback(p, input_idx=None, output_idx=None):
-    print("\n🎙️ Merekam 3 detik suara Anda...")
-    stream_in = p.open(
-        format=pyaudio.paInt16,
-        channels=1,
-        rate=16000,
-        input=True,
-        input_device_index=input_idx,
-        frames_per_buffer=1280
-    )
+def test_mic_record_and_replay(p, input_idx=None, output_idx=None):
+    print("\n[2/3] 🎙️ MENGUJI MIKROFON (Merekam 4 Detik Suara Anda)...")
+    print("      👉 Silakan BICARA SEKARANG (contoh: 'Halo Budi tes satu dua tiga')...\n")
     
-    frames = []
-    for _ in range(0, int(16000 / 1280 * 3)):
-        data = stream_in.read(1280, exception_on_overflow=False)
-        frames.append(data)
+    native_rate = 48000
+    chunk_size = int(native_rate * 0.08) # 3840
+    
+    stream_in = None
+    for r in [48000, 16000, 44100]:
+        try:
+            stream_in = p.open(
+                format=pyaudio.paInt16,
+                channels=1,
+                rate=r,
+                input=True,
+                input_device_index=input_idx,
+                frames_per_buffer=int(r * 0.08)
+            )
+            native_rate = r
+            chunk_size = int(r * 0.08)
+            break
+        except Exception:
+            continue
+            
+    if not stream_in:
+        print("      ❌ Gagal membuka mikrofon!")
+        return
+        
+    frames_native = []
+    start_t = time.time()
+    
+    while time.time() - start_t < 4.0:
+        data = stream_in.read(chunk_size, exception_on_overflow=False)
+        arr = np.frombuffer(data, dtype=np.int16)
+        rms = float(np.sqrt(np.mean(arr.astype(np.float32) ** 2)))
+        frames_native.append(data)
+        
+        bars = int(min(40, rms / 10))
+        meter = "█" * bars + "-" * (40 - bars)
+        sys.stdout.write(f"\r      [VU-Meter]: [{meter}] Level: {rms:5.1f}")
+        sys.stdout.flush()
+        time.sleep(0.02)
         
     stream_in.stop_stream()
     stream_in.close()
-    print("✅ Perekaman selesai.")
+    print("\n\n      ✅ Perekaman selesai!")
     
-    print("🔊 Memutar kembali hasil rekaman ke speaker...")
-    stream_out = p.open(
-        format=pyaudio.paInt16,
-        channels=1,
-        rate=16000,
-        output=True,
-        output_device_index=output_idx
-    )
+    print("\n[3/3] 🔊 MEMUTAR ULANG SUARA REKAMAN ANDA KE SPEAKER...")
+    print("      (Dengarkan speaker Anda sekarang!)\n")
+    time.sleep(0.5)
     
-    for f in frames:
-        stream_out.write(f)
-        
-    stream_out.stop_stream()
-    stream_out.close()
-    print("✅ Pengujian audio selesai!")
+    try:
+        stream_out = p.open(
+            format=pyaudio.paInt16,
+            channels=1,
+            rate=native_rate,
+            output=True,
+            output_device_index=output_idx
+        )
+        for f in frames_native:
+            stream_out.write(f)
+            
+        stream_out.stop_stream()
+        stream_out.close()
+        print("      🎉 Selesai! Jika Anda mendengar suara Anda sendiri, mic & speaker 100% SEHAT!")
+    except Exception as e:
+        print(f"      ⚠️ Gagal memutar ke speaker: {e}")
 
 def main():
+    print("=" * 65)
+    print("🛠️  STB Audio Diagnostic Tool (Asisten BUDI)")
+    print("=" * 65)
+    
     p = pyaudio.PyAudio()
     try:
-        list_devices(p)
-        live_meter(p, duration=6)
-        test_record_playback(p)
+        # 1. Tes nada speaker
+        play_test_tone(p)
+        time.sleep(0.5)
+        # 2. Tes rekam & putar ulang suara
+        test_mic_record_and_replay(p)
     finally:
         p.terminate()
+        
+    print("\n" + "=" * 65)
 
 if __name__ == "__main__":
     main()
