@@ -17,6 +17,15 @@ class TTSEngine:
         self.sounds_dir = os.path.join(self.base_dir, "sounds")
         self.filler_files = glob.glob(os.path.join(self.sounds_dir, "*.mp3"))
 
+    def play_startup_beep(self):
+        """Memutar nada startup langsung ke colokan AV STB."""
+        if os.path.exists("/tmp/test_beep.wav") and shutil.which("aplay"):
+            try:
+                subprocess.run(["aplay", "-D", "plughw:1,0", "/tmp/test_beep.wav"],
+                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            except Exception:
+                pass
+
     def _play_audio_file(self, file_path: str):
         """Putar file audio MP3/WAV langsung ke Colokan AV STB (plughw:1,0)."""
         # 1. Konversi ke WAV 48kHz dan putar via aplay (Paling Andal & Terbukti Berbunyi di STB)
