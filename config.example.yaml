@@ -1,0 +1,60 @@
+# ==========================================================
+# STB Smart Assistant Configuration (Example Template)
+# ZTE B860H / HG680P (Amlogic S905X) + Google Gemini AI
+# Asisten: BUDI + Hybrid Smart Home Hub (Local + Firebase Cloud)
+# ==========================================================
+
+gemini:
+  # Masukkan Google Gemini API Key Anda di sini
+  api_keys:
+    - "MASUKKAN_GEMINI_API_KEY_1"
+    - "MASUKKAN_GEMINI_API_KEY_2"
+  
+  # Model utama berkuota fresh, responsif, dan stabil: gemini-3.1-flash-lite
+  model_name: "gemini-3.1-flash-lite"
+  fallback_models:
+    - "gemini-3.5-flash"
+    - "gemini-3.6-flash"
+    - "gemini-3.7-flash"
+  
+  # Persona Asisten BUDI
+  system_prompt: >
+    Kamu adalah asisten suara pintar untuk rumah bernama "Budi".
+    Kamu berbicara dalam bahasa Indonesia yang santun, ramah, ringkas,
+    jelas, dan tidak bertele-tele karena jawabanmu akan dibacakan langsung melalui speaker.
+    Jika diminta memutar musik, mengontrol perangkat smart home (lampu/AC/kipas),
+    mengecek sensor, memeriksa cuaca, mengatur timer/alarm, atau mengatur volume,
+    gunakan function calling (tools) yang tersedia.
+
+audio:
+  sample_rate: 16000
+  channels: 1
+  chunk_size: 1280
+  input_device_index: null
+  output_device_index: null
+  energy_threshold: 40
+  silence_timeout: 1.0
+  max_record_seconds: 6.0
+
+wakeword:
+  # Engine: Vosk Grammar KWS untuk "Budi" / "Halo Budi" / "Hey Budi"
+  engine: "vosk"
+  model_name: "budi"
+  threshold: 0.50
+
+tts:
+  voice: "id-ID-ArdiNeural"
+  rate: "+0%"
+  pitch: "+0Hz"
+
+firebase:
+  # Sinkronisasi Cloud: Kontrol rumah dari kantor / HP lewat internet
+  enabled: true
+  database_url: "https://laravelia-default-rtdb.firebaseio.com"
+  auth_secret: ""
+  sync_path: "smart_home/devices"
+
+skills:
+  default_city: "Jakarta"
+  default_volume: 80
+  media_player: "mpv"

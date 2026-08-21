@@ -1,0 +1,155 @@
+{
+  "lampu_ruang_tamu": {
+    "id": "lampu_ruang_tamu",
+    "name": "Lampu Ruang Tamu",
+    "aliases": [
+      "lampu ruang tamu",
+      "lampu tengah",
+      "lampu utama"
+    ],
+    "type": "light",
+    "room": "Ruang Tamu",
+    "state": "off",
+    "brightness": 100,
+    "icon": "fa-lightbulb",
+    "last_updated": 1787331861.35433
+  },
+  "lampu_kamar": {
+    "id": "lampu_kamar",
+    "name": "Lampu Kamar",
+    "aliases": [
+      "lampu kamar",
+      "lampu tidur",
+      "lampu kamar tidur"
+    ],
+    "type": "light",
+    "room": "Kamar Tidur",
+    "state": "off",
+    "brightness": 80,
+    "icon": "fa-lightbulb",
+    "last_updated": 1787331680.64667
+  },
+  "lampu_teras": {
+    "id": "lampu_teras",
+    "name": "Lampu Teras",
+    "aliases": [
+      "lampu teras",
+      "lampu luar",
+      "lampu depan"
+    ],
+    "type": "light",
+    "room": "Teras",
+    "state": "off",
+    "brightness": 100,
+    "icon": "fa-lightbulb",
+    "last_updated": 1787331861.350573
+  },
+  "lampu_dapur": {
+    "id": "lampu_dapur",
+    "name": "Lampu Dapur",
+    "aliases": [
+      "lampu dapur",
+      "lampu meja makan"
+    ],
+    "type": "light",
+    "room": "Dapur",
+    "state": "off",
+    "brightness": 100,
+    "icon": "fa-lightbulb",
+    "last_updated": 1787331680.651516
+  },
+  "ac_kamar": {
+    "id": "ac_kamar",
+    "name": "AC Kamar",
+    "aliases": [
+      "ac",
+      "ac kamar",
+      "pendingin ruangan",
+      "ac kamar tidur"
+    ],
+    "type": "ac",
+    "room": "Kamar Tidur",
+    "state": "off",
+    "temperature": 22,
+    "mode": "cool",
+    "icon": "fa-snowflake",
+    "last_updated": 1787330857.411448
+  },
+  "kipas_angin": {
+    "id": "kipas_angin",
+    "name": "Kipas Angin",
+    "aliases": [
+      "kipas",
+      "kipas angin",
+      "kipas ruang tamu"
+    ],
+    "type": "fan",
+    "room": "Ruang Tamu",
+    "state": "off",
+    "speed": 2,
+    "icon": "fa-fan",
+    "last_updated": 1787327457.4905448
+  },
+  "sensor_suhu_ruang": {
+    "id": "sensor_suhu_ruang",
+    "name": "Sensor Suhu & Kelembaban",
+    "aliases": [
+      "sensor suhu",
+      "suhu ruangan",
+      "kelembaban",
+      "sensor dht"
+    ],
+    "type": "sensor_climate",
+    "room": "Ruang Tamu",
+    "temperature": 25.4,
+    "humidity": 60,
+    "icon": "fa-temperature-half",
+    "last_updated": 1787327468.3796349
+  },
+  "sensor_pintu_utama": {
+    "id": "sensor_pintu_utama",
+    "name": "Sensor Pintu Depan",
+    "aliases": [
+      "sensor pintu",
+      "pintu depan",
+      "pintu utama",
+      "pintu rumah"
+    ],
+    "type": "sensor_contact",
+    "room": "Pintu Depan",
+    "is_open": false,
+    "icon": "fa-door-closed",
+    "last_updated": 1787330826.666542,
+    "state": "on"
+  },
+  "sensor_gerak_teras": {
+    "id": "sensor_gerak_teras",
+    "name": "Sensor Gerak Teras",
+    "aliases": [
+      "sensor gerak",
+      "gerakan teras",
+      "sensor pir"
+    ],
+    "type": "sensor_motion",
+    "room": "Teras",
+    "motion_detected": false,
+    "icon": "fa-person-walking",
+    "last_updated": 1787327457.490547
+  },
+  "sensor_gas_dapur": {
+    "id": "sensor_gas_dapur",
+    "name": "Sensor Gas & Asap",
+    "aliases": [
+      "sensor gas",
+      "kebocoran gas",
+      "asap dapur",
+      "sensor mq2"
+    ],
+    "type": "sensor_gas",
+    "room": "Dapur",
+    "status": "Aman",
+    "ppm": 24,
+    "icon": "fa-fire-flame-simple",
+    "last_updated": 1787327457.490548
+  }
+}

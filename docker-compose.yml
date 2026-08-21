@@ -1,0 +1,21 @@
+services:
+  stb-assistant:
+    # Ganti USERNAME_GITHUB dengan username akun GitHub Anda (misal: ghcr.io/fazri/stb-gemini-assistant:latest)
+    image: ghcr.io/${GHCR_USERNAME:-fazri}/stb-gemini-assistant:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: budi-smart-assistant
+    restart: unless-stopped
+    network_mode: host # Rekomendasi di STB Linux/Armbian untuk WebUI & mDNS instan
+    devices:
+      - "/dev/snd:/dev/snd" # Akses langsung mikrofon & speaker hardware STB
+    volumes:
+      - ./config.yaml:/app/config.yaml:ro
+      - ./data:/app/data
+      - ./sounds:/app/sounds
+    environment:
+      - TZ=Asia/Jakarta
+      - PYTHONUNBUFFERED=1
+    group_add:
+      - audio

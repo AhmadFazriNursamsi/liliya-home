@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>STB Smart Voice Assistant & Smart Display</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <!-- Google Fonts & FontAwesome -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body class="theme-dark">
+    <div class="ambient-background"></div>
+
+    <div class="app-container">
+        <!-- Top Status Bar -->
+        <header class="top-bar">
+            <div class="clock-widget">
+                <div id="clock-time" class="time-display">12:00</div>
+                <div id="clock-date" class="date-display">Jumat, 21 Agustus 2026</div>
+            </div>
+
+            <div class="header-center">
+                <div class="assistant-badge">
+                    <span class="pulse-dot"></span>
+                    <span id="assistant-status-text">Standby</span>
+                </div>
+            </div>
+
+            <div class="top-right-metrics">
+                <!-- Token & API Monitor Badge -->
+                <div class="token-monitor-badge" id="token-badge" title="Penggunaan Token & Kunci AI">
+                    <div class="metric-item">
+                        <i class="fa-solid fa-coins token-icon"></i>
+                        <span id="token-count-val">0</span> <small>tok</small>
+                    </div>
+                    <div class="metric-divider"></div>
+                    <div class="metric-item">
+                        <i class="fa-solid fa-bolt model-icon"></i>
+                        <span id="active-model-val">gemini-3.5-flash</span>
+                    </div>
+                    <div class="metric-divider"></div>
+                    <div class="metric-item">
+                        <i class="fa-solid fa-key key-icon"></i>
+                        <span id="active-key-val">Keys: 4</span>
+                    </div>
+                </div>
+
+                <!-- Weather -->
+                <div class="weather-box" id="weather-box">
+                    <i class="fa-solid fa-cloud-sun weather-icon" id="weather-icon"></i>
+                    <div class="weather-info">
+                        <span id="weather-temp" class="weather-temp">--°C</span>
+                        <span id="weather-city" class="weather-city">Jakarta</span>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Display / Assistant Visualizer Area -->
+        <main class="main-display">
+            <!-- Glowing Visualizer Orb -->
+            <div class="visualizer-container">
+                <div class="orb-wrapper" id="orb-wrapper">
+                    <div class="glow-ring ring-1"></div>
+                    <div class="glow-ring ring-2"></div>
+                    <div class="glow-ring ring-3"></div>
+                    <div class="core-orb" id="core-orb">
+                        <i class="fa-solid fa-microphone mic-icon" id="mic-icon"></i>
+                    </div>
+                </div>
+
+                <!-- Animated Soundwave Bars -->
+                <div class="sound-wave" id="sound-wave">
+                    <span class="bar"></span>
+                    <span class="bar"></span>
+                    <span class="bar"></span>
+                    <span class="bar"></span>
+                    <span class="bar"></span>
+                    <span class="bar"></span>
+                    <span class="bar"></span>
+                    <span class="bar"></span>
+                </div>
+            </div>
+
+            <!-- 💡 SAKLAR & SENSOR SMART HOME LANGSUNG DI BAWAH LOGO MIC -->
+            <div class="mic-smart-controls" id="mic-smart-controls">
+                <div class="quick-switches-title">
+                    <i class="fa-solid fa-house-laptop"></i> Kontrol Cepat & Status Sensor
+                </div>
+                <div class="switches-row" id="switches-row">
+                    <!-- Dynamic Switch & Sensor Buttons rendered directly below mic -->
+                    <div class="switch-chip" id="chip-lampu_ruang_tamu" onclick="toggleDevice('lampu_ruang_tamu')">
+                        <i class="fa-solid fa-lightbulb"></i>
+                        <span class="chip-label">Lampu Tamu</span>
+                        <span class="chip-status">OFF</span>
+                    </div>
+                    <div class="switch-chip" id="chip-lampu_kamar" onclick="toggleDevice('lampu_kamar')">
+                        <i class="fa-solid fa-lightbulb"></i>
+                        <span class="chip-label">Lampu Kamar</span>
+                        <span class="chip-status">OFF</span>
+                    </div>
+                    <div class="switch-chip" id="chip-lampu_teras" onclick="toggleDevice('lampu_teras')">
+                        <i class="fa-solid fa-lightbulb"></i>
+                        <span class="chip-label">Lampu Teras</span>
+                        <span class="chip-status">OFF</span>
+                    </div>
+                    <div class="switch-chip" id="chip-ac_kamar" onclick="toggleDevice('ac_kamar')">
+                        <i class="fa-solid fa-snowflake"></i>
+                        <span class="chip-label">AC Kamar</span>
+                        <span class="chip-status">OFF</span>
+                    </div>
+                    <div class="switch-chip sensor-chip" id="chip-sensor_suhu_ruang">
+                        <i class="fa-solid fa-temperature-half"></i>
+                        <span class="chip-label">Suhu</span>
+                        <span class="chip-status" id="chip-suhu-val">27°C</span>
+                    </div>
+                    <div class="switch-chip sensor-chip" id="chip-sensor_pintu_utama">
+                        <i class="fa-solid fa-door-closed"></i>
+                        <span class="chip-label">Pintu</span>
+                        <span class="chip-status" id="chip-pintu-val">Aman</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Live Speech & Response Subtitle Card With Speaker Labels -->
+            <div class="subtitle-card" id="subtitle-card">
+                <!-- User Speech Bubble With Label -->
+                <div class="speech-bubble user-speech" id="user-speech" style="display: none;">
+                    <div class="bubble-avatar user-avatar">
+                        <i class="fa-solid fa-user"></i>
+                    </div>
+                    <div class="bubble-body">
+                        <div class="speaker-tag user-tag">
+                            <span class="tag-dot"></span> 👤 ANDA
+                        </div>
+                        <p id="user-speech-text">Mendengarkan ucapan Anda...</p>
+                    </div>
+                </div>
+
+                <!-- Assistant Speech Bubble With Label -->
+                <div class="speech-bubble assistant-speech" id="assistant-speech">
+                    <div class="bubble-avatar assistant-avatar">
+                        <i class="fa-solid fa-wand-magic-sparkles"></i>
+                    </div>
+                    <div class="bubble-body">
+                        <div class="speaker-tag assistant-tag">
+                            <span class="tag-dot"></span> 🤖 BUDI
+                        </div>
+                        <p id="assistant-speech-text">Katakan "Budi, nyalakan lampu ruang tamu" atau klik saklar di atas...</p>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <!-- Bottom Music & Control Dock -->
+        <footer class="bottom-dock">
+            <!-- Now Playing Card -->
+            <div class="media-card" id="media-card">
+                <div class="media-art" id="media-art">
+                    <i class="fa-solid fa-music"></i>
+                </div>
+                <div class="media-details">
+                    <span class="media-title" id="media-title">Tidak ada musik diputar</span>
+                    <span class="media-artist" id="media-artist">STB Media Engine</span>
+                </div>
+                <div class="media-controls">
+                    <button class="ctrl-btn" id="btn-stop-music" title="Hentikan Musik">
+                        <i class="fa-solid fa-stop"></i>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Interactive Web Input & Quick Actions -->
+            <div class="dock-actions">
+                <form class="text-cmd-form" id="text-cmd-form">
+                    <input type="text" id="text-input" placeholder="Ketik perintah... (contoh: nyalakan lampu kamar, cek suhu)" autocomplete="off">
+                    <button type="submit" class="send-btn" id="send-btn">
+                        <i class="fa-solid fa-paper-plane"></i>
+                    </button>
+                </form>
+
+                <div class="quick-buttons">
+                    <button class="action-btn" id="btn-quick-lights" title="Nyalakan/Matikan Semua Lampu">
+                        <i class="fa-solid fa-lightbulb"></i> Lampu
+                    </button>
+                    <button class="action-btn" id="btn-quick-sensors" title="Cek Status Sensor">
+                        <i class="fa-solid fa-gauge-high"></i> Sensor
+                    </button>
+                    <button class="action-btn" id="btn-fullscreen" title="Full Screen TV Mode">
+                        <i class="fa-solid fa-expand"></i>
+                    </button>
+                </div>
+            </div>
+        </footer>
+    </div>
+
+    <script src="/static/js/app.js"></script>
+</body>
+</html>
