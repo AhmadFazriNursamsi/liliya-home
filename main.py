@@ -86,6 +86,28 @@ class EventBridge:
                 
         threading.Thread(target=_exec, daemon=True).start()
 
+    def on_web_audio_command(self, audio_base64: str):
+        def _exec():
+            try:
+                import base64
+                raw_audio = base64.b64decode(audio_base64)
+                self.broadcast_state("thinking")
+                self.broadcast_assistant_reply("Mendengarkan ucapan...")
+                self.tts.play_filler()
+                
+                # Transkripsikan audio rekaman browser dengan Whisper STT
+                text = self.stt.transcribe(raw_audio)
+                if not text:
+                    text = "Cek status perangkat"
+                    
+                print(f"[WebVoice] 🗣️ ANDA (Browser Mic): \"{text}\"")
+                self.on_web_text_command(text)
+            except Exception as e:
+                print(f"[WebVoice Error] {e}")
+                self.broadcast_state("idle")
+                
+        threading.Thread(target=_exec, daemon=True).start()
+
     def on_web_media_action(self, action: str):
         if action == "stop":
             self.media_player.stop_music()

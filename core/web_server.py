@@ -96,6 +96,9 @@ class WebServer:
                     if msg_type == "text_command" and self.event_bridge:
                         text = data.get("text", "")
                         self.event_bridge.on_web_text_command(text)
+                    elif msg_type == "audio_command" and self.event_bridge:
+                        audio_b64 = data.get("audio", "")
+                        self.event_bridge.on_web_audio_command(audio_b64)
                     elif msg_type == "media_control" and self.event_bridge:
                         action = data.get("action")
                         self.event_bridge.on_web_media_action(action)
