@@ -47,9 +47,9 @@ class WakeWordDetector:
             try:
                 vosk.SetLogLevel(-1)
                 self.model = vosk.Model(self.vosk_dir)
-                grammar = '["budi", "halo budi", "hey budi", "hai budi", "alexa", "[unk]"]'
+                grammar = '["budi", "buddy", "body", "boody", "halo", "hello", "hey", "hai", "alexa", "[unk]"]'
                 self.rec = vosk.KaldiRecognizer(self.model, 16000, grammar)
-                print("[WakeWordDetector] 🎯 Vosk KWS Siap & Aktif.")
+                print("[WakeWordDetector] 🎯 Vosk KWS Siap & Aktif (Grammar: Budi / Halo Budi).")
                 return
             except Exception as e:
                 print(f"[WakeWordDetector Warning] Gagal inisialisasi Vosk: {e}")
@@ -62,7 +62,7 @@ class WakeWordDetector:
     def process(self, audio_array: np.ndarray, is_media_playing: bool = False) -> bool:
         """
         Mendeteksi kata pemicu ("Budi" / "Halo Budi").
-        Mengecek baik Final Result maupun Partial Result secara instan (0ms latency).
+        Mengecek baik Final Result maupun Partial Result secara instan.
         """
         if not self.rec:
             return False
@@ -81,8 +81,9 @@ class WakeWordDetector:
                 return False
             
             words = text.split()
+            valid_triggers = ["budi", "buddy", "body", "boody", "alexa"]
             
-            # Jika berita/musik sedang berputar: Wajib panggilan bersih dan jelas
+            # Jika berita/musik sedang berputar: Wajib panggilan bersih
             if is_media_playing:
                 unk_count = text.count("[unk]")
                 clean_words = [w for w in words if w != "[unk]"]
@@ -90,12 +91,12 @@ class WakeWordDetector:
                 if unk_count > 2 and len(clean_words) <= 1:
                     return False
                     
-                if text in ["budi", "halo budi", "hey budi", "hai budi", "alexa"] or ("budi" in clean_words and len(clean_words) <= 3):
-                    print(f"\n[WakeWordDetector] 🎯 KATA PEMICU RESMI TERDETEKSI (Saat Media Aktif): '{text}'!")
+                if any(t in clean_words for t in valid_triggers) or "halo budi" in text or "hey budi" in text:
+                    print(f"\n[WakeWordDetector] 🎯 KATA PEMICU TERDETEKSI (Saat Media Aktif): '{text}'!")
                     self.reset()
                     return True
             else:
-                if "budi" in words or "alexa" in words or "halo budi" in text or "hey budi" in text or "hai budi" in text:
+                if any(t in words for t in valid_triggers) or "halo budi" in text or "hey budi" in text or "hai budi" in text or ("halo" in words and len(words) <= 2):
                     print(f"\n[WakeWordDetector] 🎯 KATA PEMICU RESMI TERDETEKSI: '{text}'!")
                     self.reset()
                     return True
@@ -107,5 +108,5 @@ class WakeWordDetector:
 
     def reset(self):
         if self.model:
-            grammar = '["budi", "halo budi", "hey budi", "hai budi", "alexa", "[unk]"]'
+            grammar = '["budi", "buddy", "body", "boody", "halo", "hello", "hey", "hai", "alexa", "[unk]"]'
             self.rec = vosk.KaldiRecognizer(self.model, 16000, grammar)
