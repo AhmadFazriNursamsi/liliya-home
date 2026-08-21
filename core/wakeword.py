@@ -62,41 +62,44 @@ class WakeWordDetector:
     def process(self, audio_array: np.ndarray, is_media_playing: bool = False) -> bool:
         """
         Mendeteksi kata pemicu ("Budi" / "Halo Budi").
-        Jika musik/berita sedang diputar (is_media_playing=True), gunakan filter ketat
-        agar obrolan pembaca berita di speaker tidak memicu asisten secara tidak sengaja.
+        Mengecek baik Final Result maupun Partial Result secara instan (0ms latency).
         """
         if not self.rec:
             return False
             
         try:
             raw_bytes = audio_array.tobytes()
+            
             if self.rec.AcceptWaveform(raw_bytes):
                 res = json.loads(self.rec.Result())
                 text = res.get("text", "").strip().lower()
+            else:
+                partial_res = json.loads(self.rec.PartialResult())
+                text = partial_res.get("partial", "").strip().lower()
                 
-                if not text:
+            if not text:
+                return False
+            
+            words = text.split()
+            
+            # Jika berita/musik sedang berputar: Wajib panggilan bersih dan jelas
+            if is_media_playing:
+                unk_count = text.count("[unk]")
+                clean_words = [w for w in words if w != "[unk]"]
+                
+                if unk_count > 2 and len(clean_words) <= 1:
                     return False
-                
-                # Jika berita/musik sedang berputar: Wajib panggilan bersih dan jelas
-                if is_media_playing:
-                    # Tolak jika kalimat panjang berisi banyak unknown dari berita (misal: "[unk] [unk] budi [unk] [unk]")
-                    unk_count = text.count("[unk]")
-                    words = [w for w in text.split() if w != "[unk]"]
                     
-                    if unk_count > 2 and len(words) <= 1:
-                        # Ini suara latar belakang dari berita/TV, abaikan
-                        return False
-                        
-                    if text in ["budi", "halo budi", "hey budi", "hai budi", "alexa"] or ("budi" in words and len(words) <= 3):
-                        print(f"\n[WakeWordDetector] 🎯 KATA PEMICU RESMI TERDETEKSI (Saat Media Aktif): '{text}'!")
-                        self.reset()
-                        return True
-                else:
-                    words = text.split()
-                    if any(w in words for w in ["budi", "alexa"]) or "halo budi" in text or "hey budi" in text or "hai budi" in text:
-                        print(f"\n[WakeWordDetector] 🎯 KATA PEMICU RESMI TERDETEKSI: '{text}'!")
-                        self.reset()
-                        return True
+                if text in ["budi", "halo budi", "hey budi", "hai budi", "alexa"] or ("budi" in clean_words and len(clean_words) <= 3):
+                    print(f"\n[WakeWordDetector] 🎯 KATA PEMICU RESMI TERDETEKSI (Saat Media Aktif): '{text}'!")
+                    self.reset()
+                    return True
+            else:
+                if "budi" in words or "alexa" in words or "halo budi" in text or "hey budi" in text or "hai budi" in text:
+                    print(f"\n[WakeWordDetector] 🎯 KATA PEMICU RESMI TERDETEKSI: '{text}'!")
+                    self.reset()
+                    return True
+                    
         except Exception:
             pass
             

@@ -173,20 +173,19 @@ def main():
             # Stage 0: Baca audio chunk dan periksa level energi suara (RMS)
             raw_bytes, audio_array, rms = audio.read_chunk()
             
-            # Debug RMS setiap 100 frame untuk diagnosa mikrofon
+            # Debug RMS setiap 50 frame (~3 detik)
             if not hasattr(main, '_dbg_count'):
                 main._dbg_count = 0
             main._dbg_count += 1
-            if main._dbg_count % 100 == 0:
-                print(f"[AudioDebug] 🎙️ RMS={rms:.1f} threshold={audio.energy_threshold}")
+            if main._dbg_count % 50 == 0:
+                print(f"[AudioDebug] 🎙️ RMS Level: {rms:.1f}", flush=True)
 
             # Jika musik/berita sedang berputar, terapkan noise gate
-            min_energy = 90 if is_playing else audio.energy_threshold
-            if rms < min_energy:
+            if is_playing and rms < 80:
                 time.sleep(0.01)
                 continue
                 
-            # Stage 1: Wake word terdeteksi ("Budi" / "Halo Budi") dengan proteksi media
+            # Stage 1: Wake word terdeteksi ("Budi" / "Halo Budi") secara instan
             if wakeword.process(audio_array, is_media_playing=is_playing):
                 # 1. Jeda musik/berita seketika agar hening saat merekam suara Anda
                 was_playing = media_player.is_playing()
