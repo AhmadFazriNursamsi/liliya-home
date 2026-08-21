@@ -44,7 +44,7 @@ COPY skills/ /app/skills/
 COPY models/ /app/models/
 COPY sounds/ /app/sounds/
 COPY web/ /app/web/
-COPY config.yaml /app/config.yaml
+COPY config.example.yaml /app/config.yaml
 COPY main.py /app/main.py
 
 # 6. Ensure data directory exists
