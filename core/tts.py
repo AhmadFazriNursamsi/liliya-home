@@ -1,14 +1,10 @@
 import asyncio
 import glob
-import io
-import math
 import os
 import random
 import shutil
-import struct
 import subprocess
 import tempfile
-import threading
 import edge_tts
 
 class TTSEngine:
@@ -21,17 +17,33 @@ class TTSEngine:
         self.sounds_dir = os.path.join(self.base_dir, "sounds")
         self.filler_files = glob.glob(os.path.join(self.sounds_dir, "*.mp3"))
 
-    def play_startup_beep(self):
-        """Memutar feedback saat startup agar pengguna tahu speaker aktif."""
-        pass
-
     def _play_audio_file(self, file_path: str):
-        """Putar file audio MP3 menggunakan mpv atau ffplay."""
-        # 1. Coba mpv
+        """Putar file audio MP3/WAV langsung ke Colokan AV STB (plughw:1,0)."""
+        # 1. Konversi ke WAV 48kHz dan putar via aplay (Paling Andal & Terbukti Berbunyi di STB)
+        if shutil.which("ffmpeg") and shutil.which("aplay"):
+            try:
+                wav_tmp = file_path + ".wav"
+                subprocess.run(
+                    ["ffmpeg", "-y", "-i", file_path, "-ar", "48000", "-ac", "2", wav_tmp],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL
+                )
+                if os.path.exists(wav_tmp):
+                    subprocess.run(
+                        ["aplay", "-D", "plughw:1,0", wav_tmp],
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL
+                    )
+                    os.remove(wav_tmp)
+                    return
+            except Exception:
+                pass
+
+        # 2. Fallback mpv dengan alsa plughw:1,0
         if shutil.which("mpv"):
             try:
                 res = subprocess.run(
-                    ["mpv", "--no-video", "--really-quiet", "--volume=100", file_path],
+                    ["mpv", "--no-video", "--really-quiet", "--ao=alsa", "--audio-device=alsa/plughw:1,0", "--volume=100", file_path],
                     capture_output=True
                 )
                 if res.returncode == 0:
@@ -39,22 +51,13 @@ class TTSEngine:
             except Exception:
                 pass
 
-        # 2. Coba ffplay
+        # 3. Fallback ffplay
         if shutil.which("ffplay"):
             try:
-                res = subprocess.run(
+                subprocess.run(
                     ["ffplay", "-nodisp", "-autoexit", "-loglevel", "quiet", file_path],
                     capture_output=True
                 )
-                if res.returncode == 0:
-                    return
-            except Exception:
-                pass
-
-        # 3. Coba aplay jika format WAV
-        if shutil.which("aplay") and file_path.endswith(".wav"):
-            try:
-                subprocess.run(["aplay", file_path], capture_output=True)
             except Exception:
                 pass
 
@@ -80,7 +83,7 @@ class TTSEngine:
         await communicate.save(output_path)
 
     def speak(self, text: str):
-        """Sintesis teks menjadi suara dan memutarnya ke speaker."""
+        """Sintesis teks menjadi suara dan memutarnya ke speaker AV STB."""
         if not text or not text.strip():
             return
         print(f"[TTS] 🗣️ Membacakan: \"{text}\"")

@@ -26,11 +26,17 @@ class MediaPlayerSkill:
 
     def _get_player_cmd(self, file_or_url: str) -> list[str]:
         if shutil.which("mpv"):
-            return ["mpv", "--no-video", "--really-quiet", "--volume=80", file_or_url]
-        elif shutil.which("afplay"):
-            return ["afplay", file_or_url]
+            return [
+                "mpv",
+                "--no-video",
+                "--really-quiet",
+                "--ao=alsa",
+                "--audio-device=alsa/plughw:1,0",
+                "--volume=90",
+                file_or_url
+            ]
         elif shutil.which("ffplay"):
-            return ["ffplay", "-nodisp", "-autoexit", "-loglevel", "quiet", "-volume", "80", file_or_url]
+            return ["ffplay", "-nodisp", "-autoexit", "-loglevel", "quiet", "-volume", "90", file_or_url]
         return ["mpv", "--no-video", file_or_url]
 
     def pause_music(self):
