@@ -18,6 +18,8 @@ echo "=========================================================="
 # 1. Update Paket Sistem & Install Dependensi Linux
 echo "📦 [1/4] Menginstal paket sistem & audio driver..."
 apt-get update
+
+# Install paket (kompatibel dengan Ubuntu 24.04 Noble / 22.04 Jammy / Debian)
 apt-get install -y \
     python3 \
     python3-pip \
@@ -25,7 +27,6 @@ apt-get install -y \
     python3-dev \
     build-essential \
     portaudio19-dev \
-    libasound2 \
     libasound2-dev \
     alsa-utils \
     pulseaudio-utils \
