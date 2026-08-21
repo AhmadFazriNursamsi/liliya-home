@@ -114,6 +114,10 @@ def main():
     audio = AudioEngine(config)
     tts = TTSEngine(config)
     stt = WhisperSTTEngine(model_size="tiny", compute_type="int8")
+
+    # 🔔 Tes speaker via beep PyAudio langsung (sebelum TTS & MPV)
+    print("[Main] 🔔 Tes speaker via beep PyAudio...")
+    tts.play_startup_beep()
     
     # 2. Inisialisasi Smart Home Realtime Database & Firebase Bridge
     smart_home_db = SmartHomeRealtimeDB()
