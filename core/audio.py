@@ -1,4 +1,5 @@
 import collections
+import ctypes
 import math
 import os
 import struct
@@ -6,6 +7,18 @@ import time
 import wave
 import io
 import numpy as np
+
+# Matikan spam error C-level ALSA agar PortAudio tidak crash
+try:
+    ERROR_HANDLER_FUNC = ctypes.CFUNCTYPE(None, ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p)
+    def py_error_handler(filename, line, function, err, fmt):
+        pass
+    c_error_handler = ERROR_HANDLER_FUNC(py_error_handler)
+    asound = ctypes.cdll.LoadLibrary('libasound.so.2')
+    asound.snd_lib_error_set_handler(c_error_handler)
+except Exception:
+    pass
+
 import pyaudio
 
 TARGET_RATE = 16000
@@ -29,7 +42,7 @@ class AudioEngine:
             self.p = pyaudio.PyAudio()
             self._open_input_stream()
         except Exception as e:
-            print(f"[AudioEngine Warning] Inisialisasi PyAudio: {e}")
+            print(f"[AudioEngine] Inisialisasi Audio: Mode Web Mic Aktif ({e})")
 
         self.native_chunk_size = int(1280 * (self.native_rate / self.target_rate))
         self.rolling_buffer = collections.deque(maxlen=20)
@@ -38,20 +51,9 @@ class AudioEngine:
         if not self.p:
             return
 
-        # Cek apakah device index tersedia
-        dev_indices_to_try = [self.input_device] if self.input_device is not None else [None]
-        
         try:
-            count = self.p.get_device_count()
-            for i in range(count):
-                info = self.p.get_device_info_by_index(i)
-                if info.get('maxInputChannels', 0) > 0 and i not in dev_indices_to_try:
-                    dev_indices_to_try.append(i)
-        except Exception:
-            pass
-
-        for dev_idx in dev_indices_to_try:
-            for rate in [16000, 48000, 44100, 32000]:
+            # Coba buka default input
+            for rate in [16000, 48000, 44100]:
                 try:
                     frames_buf = int(1280 * (rate / self.target_rate))
                     stream = self.p.open(
@@ -59,15 +61,16 @@ class AudioEngine:
                         channels=self.channels,
                         rate=rate,
                         input=True,
-                        input_device_index=dev_idx,
                         frames_per_buffer=frames_buf
                     )
                     self.stream = stream
                     self.native_rate = rate
-                    print(f"[AudioEngine] 🎙️ Mikrofon aktif pada device={dev_idx} ({rate} Hz)")
+                    print(f"[AudioEngine] 🎙️ Mikrofon aktif ({rate} Hz)")
                     return
                 except Exception:
                     continue
+        except Exception:
+            pass
 
         print("[AudioEngine] ℹ️ Mode Web Mikrofon Aktif (Bicara melalui browser HP / Laptop)")
 
