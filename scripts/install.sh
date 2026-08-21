@@ -1,61 +1,71 @@
 #!/bin/bash
 # ====================================================================
 # Script Instalasi Otomatis STB Smart Assistant (Armbian Linux S905X)
+# Asisten: BUDI + Hybrid Smart Home Hub & Whisper STT
 # ====================================================================
 
 set -e
 
+REAL_USER=${SUDO_USER:-$USER}
+USER_HOME=$(eval echo "~$REAL_USER")
+INSTALL_DIR=$(pwd)
+
 echo "=========================================================="
-echo "🚀 Memulai Instalasi STB Smart Voice Assistant (Gemini AI)"
+echo "🤖 Memulai Instalasi STB Smart Voice Assistant (BUDI)"
+echo "   User: $REAL_USER | Direktori: $INSTALL_DIR"
 echo "=========================================================="
 
 # 1. Update Paket Sistem & Install Dependensi Linux
-echo "📦 [1/5] Menginstal paket sistem & audio driver..."
-sudo apt update
-sudo apt install -y \
+echo "📦 [1/4] Menginstal paket sistem & audio driver..."
+apt-get update
+apt-get install -y \
     python3 \
     python3-pip \
     python3-venv \
     python3-dev \
     build-essential \
     portaudio19-dev \
+    libasound2 \
     libasound2-dev \
     alsa-utils \
+    pulseaudio-utils \
     mpv \
     ffmpeg \
     curl \
     git
 
+# Tambahkan user ke grup audio
+usermod -aG audio "$REAL_USER" 2>/dev/null || true
+chmod -R 777 /dev/snd 2>/dev/null || true
+
 # 2. Setup Python Virtual Environment
-INSTALL_DIR=$(pwd)
-echo "🐍 [2/5] Membuat Python Virtual Environment di $INSTALL_DIR/venv ..."
+echo "🐍 [2/4] Menyiapkan Python Virtual Environment..."
+if [ ! -d "venv" ]; then
+    python3 -m venv venv
+fi
 
-python3 -m venv venv
-source venv/bin/activate
+# Upgrade pip & install packages
+./venv/bin/pip install --upgrade pip wheel setuptools
+./venv/bin/pip install -r requirements.txt
 
-# 3. Install Python Dependencies
-echo "📥 [3/5] Menginstal dependensi Python dari requirements.txt..."
-pip install --upgrade pip
-pip install -r requirements.txt
+# 3. Pre-cache Model AI (Whisper Tiny Bahasa Indonesia)
+echo "🧠 [3/4] Menyiapkan model Speech-to-Text Bahasa Indonesia..."
+./venv/bin/python -c "from faster_whisper import WhisperModel; WhisperModel('tiny', device='cpu', compute_type='int8')" || true
 
-# 4. Download Model Wake Word
-echo "🧠 [4/5] Mengunduh model Wake Word (openwakeword)..."
-python3 -c "import openwakeword; openwakeword.utils.download_models()" || true
-
-# 5. Konfigurasi Systemd Service untuk Autostart
-echo "⚙️ [5/5] Memasang systemd service agar asisten otomatis jalan saat STB hidup..."
+# 4. Konfigurasi Systemd Service untuk Autostart
+echo "⚙️ [4/4] Memasang systemd service agar otomatis jalan saat STB dinyalakan..."
 
 SERVICE_FILE="/etc/systemd/system/stb-assistant.service"
 
-sudo bash -c "cat <<EOF > $SERVICE_FILE
+cat <<EOF > "$SERVICE_FILE"
 [Unit]
-Description=STB Gemini Smart Voice Assistant (Alexa Clone)
+Description=STB Smart Voice Assistant & Smart Home Hub (BUDI)
 After=network-online.target sound.target
 Wants=network-online.target
 
 [Service]
 Type=simple
-User=$USER
+User=$REAL_USER
 WorkingDirectory=$INSTALL_DIR
 ExecStart=$INSTALL_DIR/venv/bin/python $INSTALL_DIR/main.py
 Restart=always
@@ -64,26 +74,28 @@ Environment=PYTHONUNBUFFERED=1
 
 [Install]
 WantedBy=multi-user.target
-EOF"
+EOF
 
-sudo systemctl daemon-reload
-sudo systemctl enable stb-assistant.service
+systemctl daemon-reload
+systemctl enable stb-assistant.service
+
+# Pastikan kepemilikan file benar
+chown -R "$REAL_USER:$REAL_USER" "$INSTALL_DIR"
 
 echo ""
 echo "=========================================================="
-echo "✅ Instalasi Berhasil Selesai!"
+echo "🎉 Instalasi Berhasil Selesai 100%!"
 echo "=========================================================="
-echo "Langkah selanjutnya:"
-echo "1. Edit file 'config.yaml' dan masukkan Gemini API Key Anda:"
-echo "   nano config.yaml"
+echo "Asisten BUDI sekarang siap digunakan."
 echo ""
-echo "2. Uji coba audio mikrofon & speaker:"
-echo "   python3 scripts/test_audio.py"
-echo ""
-echo "3. Jalankan manual untuk pertama kali:"
-echo "   ./venv/bin/python main.py"
-echo ""
-echo "4. Atau jalankan sebagai background service otomatis:"
-echo "   sudo systemctl start stb-assistant"
-echo "   sudo journalctl -u stb-assistant -f"
+echo "Perintah berguna di STB:"
+echo "▶️ Menjalankan Service:  sudo systemctl start stb-assistant"
+echo "⏹️ Menghentikan Service: sudo systemctl stop stb-assistant"
+echo "🔄 Restart Service:      sudo systemctl restart stb-assistant"
+echo "📜 Pantau Log Live:      sudo journalctl -u stb-assistant -f"
 echo "=========================================================="
+
+# Langsung jalankan servicenya sekarang
+echo "🚀 Menyalakan asisten BUDI..."
+systemctl restart stb-assistant.service
+echo "✅ Asisten BUDI aktif! Silakan panggil 'Budi' ke mikrofon USB Anda."
