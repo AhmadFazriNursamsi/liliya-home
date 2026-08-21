@@ -113,8 +113,13 @@ async function startAudioRecording() {
         if (userSpeechText) userSpeechText.textContent = "Silakan bicara ke mikrofon sekarang...";
 
     } catch (err) {
-        console.error("[Mic Error]", err);
-        alert("Akses mikrofon ditolak atau tidak tersedia. Pastikan Anda mengizinkan izin mic di browser.");
+        console.warn("[Mic Info]", err);
+        if (userSpeech) userSpeech.style.display = "flex";
+        if (userSpeechText) userSpeechText.textContent = "Mic browser terkunci: Silakan ketik perintah di bawah (contoh: nyalakan lampu)";
+        if (textInput) {
+            textInput.focus();
+            textInput.placeholder = "Ketik perintah di sini lalu tekan Enter...";
+        }
         isRecording = false;
         setOrbState("idle");
     }
