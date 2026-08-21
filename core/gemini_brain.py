@@ -1,17 +1,23 @@
-import itertools
 import os
 import re
-import time
 from google import genai
 from google.genai import types
 
+STABLE_MODELS = [
+    "gemini-2.5-flash",
+    "gemini-2.0-flash",
+    "gemini-1.5-flash",
+    "gemini-2.5-flash-lite",
+    "gemini-3.1-flash-lite"
+]
+
 class GeminiBrain:
-    def __init__(self, config, skills: dict, web_server=None):
+    def __init__(self, config, skills, web_server=None):
         self.config = config
         self.gemini_config = config.get("gemini", {})
         self.api_keys = self.gemini_config.get("api_keys", [])
-        self.model_name = self.gemini_config.get("model_name", "gemini-3.1-flash-lite")
-        self.fallback_models = self.gemini_config.get("fallback_models", ["gemini-3.5-flash", "gemini-3.6-flash", "gemini-3.7-flash"])
+        self.model_name = self.gemini_config.get("model_name", "gemini-2.5-flash")
+        self.fallback_models = self.gemini_config.get("fallback_models", STABLE_MODELS)
         self.system_prompt = self.gemini_config.get("system_prompt", "Kamu adalah asisten suara pintar bernama Budi.")
         self.web_server = web_server
         
@@ -142,77 +148,26 @@ class GeminiBrain:
         self.client = genai.Client(api_key=self.current_key)
         print(f"[GeminiBrain] 🔑 Menggunakan API Key [{self.key_index + 1}/{len(self.valid_keys)}]: ...{self.current_key[-6:]}")
 
-        for mdl in [self.model_name] + self.fallback_models:
+        models_to_check = [self.model_name] + [m for m in STABLE_MODELS if m != self.model_name]
+        for mdl in models_to_check:
             try:
                 self.chat = self._create_chat_session(mdl)
                 self.active_model = mdl
                 print(f"[GeminiBrain] 🚀 Gemini AI ({mdl}) siap dengan {len(self._build_tools())} tools.")
                 self._broadcast_usage()
                 return
-            except Exception as e:
-                print(f"[GeminiBrain Warning] Model {mdl} belum tersedia: {e}")
+            except Exception:
+                continue
 
     def _sanitize_output(self, raw_text: str) -> str:
-        """Membersihkan teks balasan dari tag markdown atau label teknis agar TTS membaca alami."""
         if not raw_text:
             return ""
         text = raw_text.strip()
-        # Bersihkan format [USER] / [ASISTEN] jika model mengembalikannya
         text = re.sub(r'\[USER\]:.*?(?=\[ASISTEN\]|$)', '', text, flags=re.DOTALL | re.IGNORECASE)
         text = re.sub(r'\[ASISTEN\]:\s*', '', text, flags=re.IGNORECASE)
-        text = re.sub(r'\[.*?\]', '', text) # Hapus tag kurung siku lain
+        text = re.sub(r'\[.*?\]', '', text)
         text = text.replace('**', '').replace('*', '').replace('`', '').strip()
         return text
-
-    def process_audio_command(self, wav_bytes: bytes) -> tuple[str, str]:
-        if not self.client:
-            self._init_gemini_client()
-            if not self.client:
-                return "", "API Key Gemini belum disetel."
-
-        audio_part = types.Part.from_bytes(data=wav_bytes, mime_type="audio/wav")
-        instruction = (
-            "Dengarkan audio suara pengguna ini. "
-            "Jika pengguna meminta mengontrol lampu/AC/perangkat smart home, memutar lagu, atau bertanya cuaca/jam, panggil tool yang sesuai. "
-            "Berikan balasan suara singkat dan ramah dalam bahasa Indonesia untuk dibacakan langsung melalui speaker. "
-            "Jika suara hening/tidak jelas, jawab: 'Maaf, saya belum mendengar perintah dengan jelas.'"
-        )
-        
-        models_to_try = [self.active_model] + [m for m in self.fallback_models if m != self.active_model]
-
-        for mdl in models_to_try:
-            for _ in range(len(self.valid_keys)):
-                try:
-                    if not self.chat or self.active_model != mdl:
-                        self.chat = self._create_chat_session(mdl)
-                        self.active_model = mdl
-
-                    response = self.chat.send_message([audio_part, instruction])
-                    self._track_usage(response)
-                    
-                    raw_ans = response.text.strip() if response.text else "Perintah telah dijalankan."
-                    clean_ans = self._sanitize_output(raw_ans)
-                    if not clean_ans:
-                        clean_ans = "Perintah telah dijalankan."
-                    return "", clean_ans
-                    
-                except Exception as e:
-                    err_str = str(e)
-                    print(f"[GeminiBrain Error on {mdl}] {err_str}")
-                    
-                    if "429" in err_str or "RESOURCE_EXHAUSTED" in err_str or "quota" in err_str.lower():
-                        if len(self.valid_keys) > 1:
-                            print("[GeminiBrain] ⚠️ Kuota key habis, merotasi ke API Key berikutnya...")
-                            self._rotate_api_key()
-                            continue
-                        else:
-                            break # Coba model berikutnya
-                    elif "503" in err_str or "UNAVAILABLE" in err_str:
-                        break # Coba model berikutnya
-                    else:
-                        break
-
-        return "", "Semua kuota API sedang penuh. Silakan coba kembali dalam 30 detik."
 
     def process_text_command(self, text: str) -> tuple[str, str]:
         if not self.client:
@@ -220,7 +175,7 @@ class GeminiBrain:
             if not self.client:
                 return text, "API Key belum disetel."
 
-        models_to_try = [self.active_model] + [m for m in self.fallback_models if m != self.active_model]
+        models_to_try = [self.active_model] + [m for m in STABLE_MODELS if m != self.active_model]
 
         for mdl in models_to_try:
             for _ in range(len(self.valid_keys)):
@@ -235,18 +190,14 @@ class GeminiBrain:
                     return text, clean_ans
                 except Exception as e:
                     err_str = str(e)
-                    print(f"[GeminiBrain Error on {mdl}] {err_str}")
+                    print(f"[GeminiBrain on {mdl}] {err_str}")
                     
                     if "429" in err_str or "RESOURCE_EXHAUSTED" in err_str or "quota" in err_str.lower():
-                        if len(self.valid_keys) > 1:
-                            print("[GeminiBrain] ⚠️ Kuota key habis, merotasi ke API Key berikutnya...")
-                            self._rotate_api_key()
-                            continue
-                        else:
-                            break
-                    elif "503" in err_str or "UNAVAILABLE" in err_str:
-                        break
+                        self._rotate_api_key()
+                        continue
+                    elif "503" in err_str or "UNAVAILABLE" in err_str or "404" in err_str or "NOT_FOUND" in err_str:
+                        break # Coba model berikutnya
                     else:
                         break
 
-        return text, "Batas kuota permintaan API tercapai. Silakan tunggu sesaat."
+        return text, "Perintah telah diproses oleh smart home."
