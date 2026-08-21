@@ -290,14 +290,17 @@ async function startAudioRecording() {
 
         mediaRecorder.onstop = async () => {
             stream.getTracks().forEach(track => track.stop());
-            const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
+            const mimeType = mediaRecorder.mimeType || 'audio/webm';
+            const audioBlob = new Blob(audioChunks, { type: mimeType });
             const reader = new FileReader();
             reader.readAsDataURL(audioBlob);
             reader.onloadend = () => {
                 const base64Audio = reader.result.split(',')[1];
                 if (ws && ws.readyState === WebSocket.OPEN) {
                     setOrbState("thinking");
-                    if (assistantSpeechText) assistantSpeechText.textContent = "Mentranskripsi suara Anda...";
+                    if (userSpeech) userSpeech.style.display = "flex";
+                    if (userSpeechText) userSpeechText.textContent = "Mentranskripsikan ucapan Anda...";
+                    if (assistantSpeechText) assistantSpeechText.textContent = "Budi sedang berpikir...";
                     ws.send(JSON.stringify({
                         type: "audio_command",
                         audio: base64Audio

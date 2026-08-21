@@ -1,6 +1,7 @@
 import io
+import os
 import re
-import time
+import tempfile
 from faster_whisper import WhisperModel
 
 INDONESIAN_SMART_HOME_PROMPT = (
@@ -8,10 +9,9 @@ INDONESIAN_SMART_HOME_PROMPT = (
     "Perintah suara bahasa Indonesia: buka pintu sekarang, tutup pintu, "
     "nyalakan lampu ruang tamu, matikan semua lampu, nyalakan lampu teras, "
     "berapa suhu kamar sekarang, cek status sensor pintu dan suhu ruangan, "
-    "atur suhu AC ke 22 derajat, putar lagu, jam berapa sekarang."
+    "atur suhu AC ke 22 derajat, putar lagu Sheila on 7, jam berapa sekarang."
 )
 
-# Kamus normalisasi fonetik pintar bahasa Indonesia
 PHONETIC_CORRECTIONS = {
     r"\bbukap\b": "buka",
     r"\bsekehang\b": "sekarang",
@@ -35,13 +35,26 @@ class WhisperSTTEngine:
         self.model = WhisperModel(model_size, device="cpu", compute_type=compute_type)
         print("[STTEngine] ✅ Mesin STT Bahasa Indonesia (Beam Search 3 + Anti-Halusinasi) siap.")
 
-    def transcribe(self, wav_bytes: bytes) -> str:
-        if not wav_bytes or len(wav_bytes) < 3000:
+    def transcribe(self, audio_data) -> str:
+        """Mentranskripsikan audio (bisa berupa bytes atau filepath) ke teks bahasa Indonesia."""
+        if not audio_data:
             return ""
+            
         try:
-            # Gunakan Beam Search = 3 untuk akurasi tata bahasa dan kosa kata Indonesia maksimal
+            input_source = audio_data
+            tmp_to_delete = None
+            
+            if isinstance(audio_data, bytes):
+                if len(audio_data) < 1000:
+                    return ""
+                # Simpan ke file temporary agar ffmpeg PyAV bisa membaca webm/ogg/mp4/wav dengan aman
+                with tempfile.NamedTemporaryFile(suffix=".audio", delete=False) as tf:
+                    tf.write(audio_data)
+                    input_source = tf.name
+                    tmp_to_delete = tf.name
+            
             segments, info = self.model.transcribe(
-                io.BytesIO(wav_bytes),
+                input_source,
                 language="id",
                 beam_size=3,
                 best_of=3,
@@ -51,7 +64,16 @@ class WhisperSTTEngine:
             )
             text = " ".join([s.text for s in segments]).strip()
             
-            # 1. Bersihkan prefix kata pemicu ("budi" / "halo budi")
+            if tmp_to_delete and os.path.exists(tmp_to_delete):
+                try:
+                    os.remove(tmp_to_delete)
+                except Exception:
+                    pass
+
+            if not text:
+                return ""
+                
+            # 1. Bersihkan prefix kata pemicu ("budi" / "halo budi") jika ada
             cleaned_text = re.sub(r'^(halo budi|hey budi|hai budi|budi)[,\s]+', '', text, flags=re.IGNORECASE).strip()
             if not cleaned_text:
                 cleaned_text = text
