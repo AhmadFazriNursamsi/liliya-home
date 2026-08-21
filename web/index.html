@@ -176,8 +176,11 @@
             <!-- Interactive Web Input & Quick Actions -->
             <div class="dock-actions">
                 <form class="text-cmd-form" id="text-cmd-form">
-                    <input type="text" id="text-input" placeholder="Ketik perintah... (contoh: nyalakan lampu kamar, cek suhu)" autocomplete="off">
-                    <button type="submit" class="send-btn" id="send-btn">
+                    <input type="text" id="text-input" placeholder="Ketik atau klik tombol Mic untuk bicara... (contoh: nyalakan lampu kamar)" autocomplete="off">
+                    <button type="button" class="action-btn" id="btn-voice-input" title="Klik untuk berbicara via Mic HP/Laptop" style="background: linear-gradient(135deg, #00f2fe, #4facfe); color: #000; font-weight: bold; border-radius: 12px; margin-right: 6px; padding: 0 16px;">
+                        <i class="fa-solid fa-microphone"></i> Bicara
+                    </button>
+                    <button type="submit" class="send-btn" id="send-btn" title="Kirim Perintah Teks">
                         <i class="fa-solid fa-paper-plane"></i>
                     </button>
                 </form>

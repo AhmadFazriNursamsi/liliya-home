@@ -292,6 +292,11 @@ if (orbWrapper) {
     orbWrapper.addEventListener('click', toggleBrowserMic);
 }
 
+const btnVoiceInput = document.getElementById('btn-voice-input');
+if (btnVoiceInput) {
+    btnVoiceInput.addEventListener('click', toggleBrowserMic);
+}
+
 if (textCmdForm) {
     textCmdForm.addEventListener('submit', (e) => {
         e.preventDefault();

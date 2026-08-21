@@ -8,7 +8,7 @@ import wave
 import io
 import numpy as np
 
-# Matikan spam error C-level ALSA agar PortAudio tidak crash
+# Matikan spam error C-level ALSA
 try:
     ERROR_HANDLER_FUNC = ctypes.CFUNCTYPE(None, ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p)
     def py_error_handler(filename, line, function, err, fmt):
@@ -52,23 +52,29 @@ class AudioEngine:
             return
 
         try:
-            # Coba buka default input
-            for rate in [16000, 48000, 44100]:
-                try:
-                    frames_buf = int(1280 * (rate / self.target_rate))
-                    stream = self.p.open(
-                        format=pyaudio.paInt16,
-                        channels=self.channels,
-                        rate=rate,
-                        input=True,
-                        frames_per_buffer=frames_buf
-                    )
-                    self.stream = stream
-                    self.native_rate = rate
-                    print(f"[AudioEngine] 🎙️ Mikrofon aktif ({rate} Hz)")
-                    return
-                except Exception:
-                    continue
+            device_count = self.p.get_device_count()
+            # Cari perangkat input mikrofon yang terhubung
+            for i in range(device_count):
+                dev_info = self.p.get_device_info_by_index(i)
+                if dev_info.get('maxInputChannels', 0) > 0:
+                    for rate in [48000, 16000, 44100, 32000]:
+                        try:
+                            frames_buf = int(1280 * (rate / self.target_rate))
+                            stream = self.p.open(
+                                format=pyaudio.paInt16,
+                                channels=self.channels,
+                                rate=rate,
+                                input=True,
+                                input_device_index=i,
+                                frames_per_buffer=frames_buf
+                            )
+                            self.stream = stream
+                            self.native_rate = rate
+                            dev_name = dev_info.get('name', 'Audio Device')
+                            print(f"[AudioEngine] 🎙️ Mikrofon USB/Hardware Terdeteksi & Aktif: {dev_name} (Rate: {rate} Hz)")
+                            return
+                        except Exception:
+                            continue
         except Exception:
             pass
 
