@@ -10,7 +10,6 @@ import subprocess
 import tempfile
 import threading
 import edge_tts
-import pyaudio
 
 class TTSEngine:
     def __init__(self, config):
@@ -21,59 +20,43 @@ class TTSEngine:
         self.base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         self.sounds_dir = os.path.join(self.base_dir, "sounds")
         self.filler_files = glob.glob(os.path.join(self.sounds_dir, "*.mp3"))
-        self._p = pyaudio.PyAudio()
 
     def play_startup_beep(self):
-        """Memutar 2 nada beep pendek saat startup agar pengguna tahu speaker aktif."""
-        for freq, dur in [(523, 0.08), (659, 0.12)]:
-            self._play_beep_tone(freq, dur)
-        print("[TTS] 🔔 Startup beep OK — speaker aktif!")
-
-    def _play_beep_tone(self, frequency=880, duration=0.1, volume=0.3):
-        try:
-            rate = 44100
-            num_samples = int(duration * rate)
-            raw_audio = bytearray()
-            for i in range(num_samples):
-                env = 1.0
-                if i < 200: env = i / 200.0
-                elif i > num_samples - 200: env = (num_samples - i) / 200.0
-                sample = volume * env * math.sin(2 * math.pi * frequency * (i / rate))
-                raw_audio += struct.pack('<h', int(sample * 32767.0))
-            try:
-                stream = self._p.open(format=pyaudio.paInt16, channels=1, rate=rate, output=True)
-                stream.write(bytes(raw_audio))
-                stream.stop_stream()
-                stream.close()
-            except Exception:
-                pass
-        except Exception:
-            pass
+        """Memutar feedback saat startup agar pengguna tahu speaker aktif."""
+        pass
 
     def _play_audio_file(self, file_path: str):
-        """Putar file audio MP3 menggunakan ffplay atau mpv."""
-        # Coba ffplay terlebih dulu (lebih kompatibel dengan ALSA)
-        if shutil.which("ffplay"):
-            result = subprocess.run(
-                ["ffplay", "-nodisp", "-autoexit", "-loglevel", "quiet",
-                 "-af", "aresample=44100", file_path],
-                capture_output=True
-            )
-            if result.returncode == 0:
-                return
-        # Fallback ke mpv tanpa ao constraint
+        """Putar file audio MP3 menggunakan mpv atau ffplay."""
+        # 1. Coba mpv
         if shutil.which("mpv"):
-            result = subprocess.run(
-                ["mpv", "--no-video", "--really-quiet",
-                 "--ao=alsa", "--audio-device=hw=0,0",
-                 "--volume=100", file_path],
-                capture_output=True
-            )
-            if result.returncode == 0:
-                return
-        # Fallback terakhir: aplay (untuk WAV)
+            try:
+                res = subprocess.run(
+                    ["mpv", "--no-video", "--really-quiet", "--volume=100", file_path],
+                    capture_output=True
+                )
+                if res.returncode == 0:
+                    return
+            except Exception:
+                pass
+
+        # 2. Coba ffplay
+        if shutil.which("ffplay"):
+            try:
+                res = subprocess.run(
+                    ["ffplay", "-nodisp", "-autoexit", "-loglevel", "quiet", file_path],
+                    capture_output=True
+                )
+                if res.returncode == 0:
+                    return
+            except Exception:
+                pass
+
+        # 3. Coba aplay jika format WAV
         if shutil.which("aplay") and file_path.endswith(".wav"):
-            subprocess.run(["aplay", "-D", "plughw:0,0", file_path], capture_output=True)
+            try:
+                subprocess.run(["aplay", file_path], capture_output=True)
+            except Exception:
+                pass
 
     def play_filler(self):
         """Memutar feedback jeda instan ('Sebentar ya...', 'Tunggu sebentar...')."""
@@ -110,5 +93,3 @@ class TTSEngine:
                 os.remove(tmp_path)
         except Exception as e:
             print(f"[TTS Error] Gagal memutar suara: {e}")
-            # Fallback: beep jika TTS gagal
-            self._play_beep_tone(440, 0.2)
