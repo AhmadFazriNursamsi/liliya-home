@@ -1,14 +1,17 @@
 // =========================================================
 // STB Smart Voice Assistant & Smart Display
-// App Controller with Realtime DB Sync & Error-Proof Bindings
+// App Controller with Realtime DB Sync & Browser Voice Input
 // =========================================================
 
 let ws = null;
 let reconnectTimer = null;
 let smartHomeDevices = {};
+let recognition = null;
+let isRecording = false;
 
 // DOM Elements
 const orbWrapper = document.getElementById('orb-wrapper');
+const coreOrb = document.getElementById('core-orb');
 const statusText = document.getElementById('assistant-status-text');
 const userSpeech = document.getElementById('user-speech');
 const userSpeechText = document.getElementById('user-speech-text');
@@ -54,8 +57,8 @@ function setOrbState(state) {
     document.body.className = `theme-dark state-${state}`;
     if (statusText) {
         const labels = {
-            "idle": "Standby",
-            "listening": "Mendengarkan...",
+            "idle": "Standby (Klik Mic / Katakan Budi)",
+            "listening": "Mendengarkan ucapan Anda...",
             "thinking": "Sedang Berpikir...",
             "speaking": "Membacakan Respon..."
         };
@@ -64,7 +67,68 @@ function setOrbState(state) {
 }
 setOrbState("idle");
 
-// 3. WebSocket Connection
+// 3. Browser Microphone Support (Web Speech Recognition for Phone / Laptop)
+function initBrowserVoiceRecognition() {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+        console.log("[Voice] Browser ini tidak mendukung Web Speech API.");
+        return;
+    }
+
+    recognition = new SpeechRecognition();
+    recognition.lang = 'id-ID';
+    recognition.continuous = false;
+    recognition.interimResults = true;
+
+    recognition.onstart = () => {
+        isRecording = true;
+        setOrbState("listening");
+        if (userSpeech) userSpeech.style.display = "flex";
+        if (userSpeechText) userSpeechText.textContent = "Mendengarkan suara Anda...";
+    };
+
+    recognition.onresult = (event) => {
+        let transcript = "";
+        for (let i = event.resultIndex; i < event.results.length; ++i) {
+            transcript += event.results[i][0].transcript;
+        }
+        if (userSpeechText) userSpeechText.textContent = transcript;
+        if (event.results[0].isFinal) {
+            console.log(`[BrowserVoice] 🗣️ Ucapan final: "${transcript}"`);
+            sendCommand(transcript);
+        }
+    };
+
+    recognition.onerror = (event) => {
+        console.warn("[BrowserVoice Error]", event.error);
+        isRecording = false;
+        setOrbState("idle");
+    };
+
+    recognition.onend = () => {
+        isRecording = false;
+    };
+}
+initBrowserVoiceRecognition();
+
+function toggleBrowserMic() {
+    if (!recognition) {
+        alert("Gunakan browser Google Chrome / Safari / Edge di HP atau Laptop untuk fitur mikrofon web.");
+        return;
+    }
+    if (isRecording) {
+        recognition.stop();
+        isRecording = false;
+    } else {
+        try {
+            recognition.start();
+        } catch (e) {
+            console.warn(e);
+        }
+    }
+}
+
+// 4. WebSocket Connection
 function connectWebSocket() {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const wsUrl = `${protocol}//${window.location.host}/ws`;
@@ -98,7 +162,7 @@ function connectWebSocket() {
     };
 }
 
-// 4. Smart Home Chip Controller (Directly below Mic)
+// 5. Smart Home Chip Controller (Directly below Mic)
 function toggleDevice(deviceId) {
     if (ws && ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({
@@ -155,7 +219,7 @@ function syncAllDevices(devicesList) {
     });
 }
 
-// 5. Handle Incoming Events from STB
+// 6. Handle Incoming Events from STB
 function handleServerEvent(data) {
     const type = data.type;
 
@@ -205,7 +269,7 @@ function handleServerEvent(data) {
     }
 }
 
-// 6. Send Commands to STB
+// 7. Send Commands to STB
 function sendCommand(text) {
     if (!text || !text.trim()) return;
     if (ws && ws.readyState === WebSocket.OPEN) {
@@ -221,7 +285,13 @@ function sendCommand(text) {
     }
 }
 
-// 7. Event Listeners with Safe Guards
+// 8. Event Listeners
+if (orbWrapper) {
+    orbWrapper.style.cursor = "pointer";
+    orbWrapper.title = "Klik untuk berbicara via Mic HP / Laptop";
+    orbWrapper.addEventListener('click', toggleBrowserMic);
+}
+
 if (textCmdForm) {
     textCmdForm.addEventListener('submit', (e) => {
         e.preventDefault();
