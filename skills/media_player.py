@@ -16,14 +16,18 @@ RADIO_STATIONS = {
 }
 
 class MediaPlayerSkill:
-    def __init__(self, config):
+    def __init__(self, config, event_bridge=None):
         self.config = config.get("skills", {})
+        self.event_bridge = event_bridge
         self.current_process = None
         self.current_title = ""
         self.is_paused = False
         self.lock = threading.Lock()
         self.cache_dir = "/tmp/stb_assistant_music"
         os.makedirs(self.cache_dir, exist_ok=True)
+
+    def set_event_bridge(self, event_bridge):
+        self.event_bridge = event_bridge
 
     def _get_player_cmd(self, file_or_url: str) -> list[str]:
         target_dev = find_active_playback_device()
@@ -79,6 +83,8 @@ class MediaPlayerSkill:
                 
             title = self.current_title
             self.current_title = ""
+            if self.event_bridge:
+                self.event_bridge.broadcast_now_playing("")
             return f"Musik '{title}' telah dihentikan." if title else "Musik telah dihentikan."
 
     def is_playing(self) -> bool:
@@ -100,11 +106,15 @@ class MediaPlayerSkill:
             station_name = "Prambors FM"
             stream_url = RADIO_STATIONS["prambors"]
 
+        title_display = f"Radio {station_name}"
+        self.current_title = title_display
+        if self.event_bridge:
+            self.event_bridge.broadcast_now_playing(title_display)
+
         def _play():
-            time.sleep(1.2)  # Beri jeda agar suara TTS selesai membaca dulu
+            time.sleep(1.8)
             auto_unmute_hardware_audio()
             with self.lock:
-                self.current_title = f"Radio {station_name}"
                 self.is_paused = False
                 cmd = self._get_player_cmd(stream_url)
                 self.current_process = subprocess.Popen(cmd)
@@ -119,40 +129,50 @@ class MediaPlayerSkill:
         if not any(w in search_query.lower() for w in ["lagu", "song", "dan", "official", "audio"]):
             search_query += " audio"
             
-        print(f"[MediaPlayer] 🔍 Mencari lagu: '{search_query}'")
+        title_display = query.title()
+        self.current_title = title_display
+        if self.event_bridge:
+            self.event_bridge.broadcast_now_playing(title_display)
+            
+        print(f"[MediaPlayer] 🔍 Mencari lagu YouTube: '{search_query}'")
 
         def _fetch_and_play():
             try:
-                time.sleep(1.5)  # Beri jeda 1.5 detik agar respon suara TTS selesai bicara
+                # Beri jeda 2 detik agar suara pembacaan TTS selesai & melepaskan soundcard ALSA
+                time.sleep(2.0)
                 auto_unmute_hardware_audio()
 
-                # 1. Dapatkan URL streaming audio langsung via yt-dlp -g (Cepat ~1 detik)
+                yt_bin = shutil.which("yt-dlp") or "/usr/local/bin/yt-dlp" or "yt-dlp"
+
+                # 1. Dapatkan URL streaming audio langsung via yt-dlp -g
                 stream_cmd = [
-                    "yt-dlp",
+                    yt_bin,
                     "-f", "ba/b",
                     "-g",
                     "--default-search", "ytsearch",
                     f"ytsearch1:{search_query}"
                 ]
-                res_url = subprocess.run(stream_cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, timeout=8)
+                res_url = subprocess.run(stream_cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, timeout=20)
                 stream_url = res_url.stdout.strip().splitlines()[0] if (res_url and res_url.stdout) else ""
 
                 if stream_url:
                     with self.lock:
-                        self.current_title = query.title()
                         self.is_paused = False
                         cmd_play = self._get_player_cmd(stream_url)
                         self.current_process = subprocess.Popen(cmd_play)
-                        print(f"[MediaPlayer] ▶️ Sedang Memutar Lagu: {self.current_title}")
+                        print(f"[MediaPlayer] ▶️ Sedang Memutar Lagu: {title_display}")
+                        if self.event_bridge:
+                            self.event_bridge.broadcast_now_playing(title_display)
                         return
 
                 # Fallback: mpv langsung dengan protokol ytdl://
                 with self.lock:
-                    self.current_title = query.title()
                     self.is_paused = False
                     cmd_play = self._get_player_cmd(f"ytdl://ytsearch1:{search_query}")
                     self.current_process = subprocess.Popen(cmd_play)
-                    print(f"[MediaPlayer] ▶️ Streaming via MPV: {self.current_title}")
+                    print(f"[MediaPlayer] ▶️ Streaming via MPV: {title_display}")
+                    if self.event_bridge:
+                        self.event_bridge.broadcast_now_playing(title_display)
 
             except Exception as e:
                 print(f"[MediaPlayer Error] {e}")
