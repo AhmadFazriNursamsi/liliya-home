@@ -114,10 +114,9 @@ class MediaPlayerSkill:
         title_display = f"Radio {station_name}"
         self.current_title = title_display
         if self.event_bridge:
-            self.event_bridge.broadcast_now_playing(title_display)
+            self.event_bridge.broadcast_now_playing(f"⏳ Memutar: {title_display}")
 
         def _play():
-            # Tunggu jika suara TTS masih berbicara
             for _ in range(20):
                 res = subprocess.run(["pgrep", "aplay"], capture_output=True, text=True)
                 if not res.stdout.strip():
@@ -131,6 +130,8 @@ class MediaPlayerSkill:
                 cmd = self._get_player_cmd(stream_url)
                 self.current_process = subprocess.Popen(cmd)
                 print(f"[MediaPlayer] 📻 Sedang Memutar Radio: {station_name}")
+                if self.event_bridge:
+                    self.event_bridge.broadcast_now_playing(title_display)
 
         threading.Thread(target=_play, daemon=True).start()
         return f"Memutar radio {station_name} sekarang."
@@ -144,16 +145,20 @@ class MediaPlayerSkill:
         title_display = query.title()
         self.current_title = title_display
         if self.event_bridge:
-            self.event_bridge.broadcast_now_playing(title_display)
+            self.event_bridge.broadcast_now_playing(f"⏳ Memuat: {title_display}...")
             
         print(f"[MediaPlayer] 🔍 Mencari lagu YouTube: '{search_query}'")
 
         def _fetch_and_play():
             try:
-                # 1. Dapatkan URL streaming YouTube secara paralel sambil TTS berbicara
                 yt_bin = shutil.which("yt-dlp") or "/usr/local/bin/yt-dlp" or "yt-dlp"
+                
+                # 1. Ekstraksi URL streaming ultra cepat
                 stream_cmd = [
                     yt_bin,
+                    "--no-warnings",
+                    "--no-check-certificates",
+                    "--no-playlist",
                     "-f", "ba/b",
                     "-g",
                     "--default-search", "ytsearch",
@@ -162,7 +167,7 @@ class MediaPlayerSkill:
                 res_url = subprocess.run(stream_cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, timeout=20)
                 stream_url = res_url.stdout.strip().splitlines()[0] if (res_url and res_url.stdout) else ""
 
-                # 2. Tunggu hingga suara respon TTS ("Baik, memutar...") selesai membaca di speaker
+                # 2. Tunggu hingga suara respon TTS ("Baik, memutar...") selesai berbicara di speaker
                 for _ in range(30):
                     res = subprocess.run(["pgrep", "aplay"], capture_output=True, text=True)
                     if not res.stdout.strip():
@@ -179,17 +184,17 @@ class MediaPlayerSkill:
                         self.current_process = subprocess.Popen(cmd_play)
                         print(f"[MediaPlayer] ▶️ Sedang Memutar Lagu: {title_display}")
                         if self.event_bridge:
-                            self.event_bridge.broadcast_now_playing(title_display)
+                            self.event_bridge.broadcast_now_playing(f"🎵 {title_display}")
                         return
 
-                # Fallback jika URL gagal
+                # Fallback: MPV direct ytdl
                 with self.lock:
                     self.is_paused = False
                     cmd_play = self._get_player_cmd(f"ytdl://ytsearch1:{search_query}")
                     self.current_process = subprocess.Popen(cmd_play)
                     print(f"[MediaPlayer] ▶️ Streaming via MPV: {title_display}")
                     if self.event_bridge:
-                        self.event_bridge.broadcast_now_playing(title_display)
+                        self.event_bridge.broadcast_now_playing(f"🎵 {title_display}")
 
             except Exception as e:
                 print(f"[MediaPlayer Error] {e}")
