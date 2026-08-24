@@ -6,6 +6,7 @@ import shutil
 import subprocess
 import tempfile
 import edge_tts
+from core.audio_hw import auto_unmute_hardware_audio, find_active_playback_device
 
 class TTSEngine:
     def __init__(self, config):
@@ -17,17 +18,28 @@ class TTSEngine:
         self.sounds_dir = os.path.join(self.base_dir, "sounds")
         self.filler_files = glob.glob(os.path.join(self.sounds_dir, "*.mp3"))
 
+        # Pastikan DAC hardware selalu terbuka dan unmuted sejak inisialisasi
+        auto_unmute_hardware_audio()
+
     def play_startup_beep(self):
-        """Memutar nada startup langsung ke colokan AV STB."""
+        """Memutar nada startup langsung ke speaker STB."""
+        auto_unmute_hardware_audio()
+        target_dev = find_active_playback_device()
         if os.path.exists("/tmp/test_beep.wav") and shutil.which("aplay"):
-            try:
-                subprocess.run(["aplay", "-D", "plughw:1,0", "/tmp/test_beep.wav"],
-                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            except Exception:
-                pass
+            for dev in [target_dev, "plughw:1,0", "plughw:0,0", "default"]:
+                try:
+                    res = subprocess.run(["aplay", "-D", dev, "/tmp/test_beep.wav"],
+                                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                    if res.returncode == 0:
+                        break
+                except Exception:
+                    pass
 
     def _play_audio_file(self, file_path: str):
-        """Putar file audio MP3/WAV langsung ke Colokan AV STB (plughw:1,0)."""
+        """Putar file audio MP3/WAV langsung ke Colokan AV STB / Speaker Aktif."""
+        auto_unmute_hardware_audio()
+        target_dev = find_active_playback_device()
+
         # 1. Konversi ke WAV 48kHz dan putar via aplay (Paling Andal & Terbukti Berbunyi di STB)
         if shutil.which("ffmpeg") and shutil.which("aplay"):
             try:
@@ -38,21 +50,27 @@ class TTSEngine:
                     stderr=subprocess.DEVNULL
                 )
                 if os.path.exists(wav_tmp):
-                    subprocess.run(
-                        ["aplay", "-D", "plughw:1,0", wav_tmp],
-                        stdout=subprocess.DEVNULL,
-                        stderr=subprocess.DEVNULL
-                    )
-                    os.remove(wav_tmp)
+                    for dev in [target_dev, "plughw:1,0", "plughw:0,0", "default"]:
+                        res = subprocess.run(
+                            ["aplay", "-D", dev, wav_tmp],
+                            stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL
+                        )
+                        if res.returncode == 0:
+                            break
+                    try:
+                        os.remove(wav_tmp)
+                    except Exception:
+                        pass
                     return
             except Exception:
                 pass
 
-        # 2. Fallback mpv dengan alsa plughw:1,0
+        # 2. Fallback mpv dengan alsa target device
         if shutil.which("mpv"):
             try:
                 res = subprocess.run(
-                    ["mpv", "--no-video", "--really-quiet", "--ao=alsa", "--audio-device=alsa/plughw:1,0", "--volume=100", file_path],
+                    ["mpv", "--no-video", "--really-quiet", "--ao=alsa", f"--audio-device=alsa/{target_dev}", "--volume=100", file_path],
                     capture_output=True
                 )
                 if res.returncode == 0:

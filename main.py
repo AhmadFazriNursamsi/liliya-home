@@ -132,6 +132,10 @@ def main():
     
     config = load_config()
     
+    # 0. Buka seluruh switch volume DAC hardware STB (S905X & USB)
+    from core.audio_hw import auto_unmute_hardware_audio
+    auto_unmute_hardware_audio()
+
     # 1. Inisialisasi Audio, TTS & STT Bahasa Indonesia
     audio = AudioEngine(config)
     tts = TTSEngine(config)
