@@ -48,10 +48,19 @@ class MediaPlayerSkill:
                 "--ao=alsa",
                 f"--audio-device=alsa/{target_dev}",
                 "--volume=50",
+                "--user-agent=Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Mobile Safari/537.36",
                 file_or_url
             ]
         elif shutil.which("ffplay"):
-            return ["ffplay", "-nodisp", "-autoexit", "-loglevel", "quiet", "-volume", "50", file_or_url]
+            return [
+                "ffplay",
+                "-nodisp",
+                "-autoexit",
+                "-loglevel", "quiet",
+                "-volume", "50",
+                "-user_agent", "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Mobile Safari/537.36",
+                file_or_url
+            ]
         return ["mpv", "--no-video", file_or_url]
 
     def pause_music(self):
@@ -156,12 +165,14 @@ class MediaPlayerSkill:
             try:
                 yt_bin = shutil.which("yt-dlp") or "/usr/local/bin/yt-dlp" or "yt-dlp"
                 
-                # 1. Ekstraksi URL streaming langsung bersih (seperti di test_music.py)
+                # 1. Ekstraksi URL streaming langsung dengan Android Client (bypass YouTube Kids & 403 Forbidden)
                 stream_cmd = [
                     yt_bin,
+                    "--extractor-args", "youtube:player_client=android,mweb",
+                    "--no-check-certificates",
+                    "--geo-bypass",
                     "-f", "ba/b",
                     "-g",
-                    "--default-search", "ytsearch",
                     f"ytsearch1:{search_query}"
                 ]
                 res_url = subprocess.run(stream_cmd, capture_output=True, text=True, timeout=20)
@@ -181,7 +192,7 @@ class MediaPlayerSkill:
                             self.event_bridge.broadcast_now_playing(f"🎵 {title_display}")
                         return
 
-                # 3. Fallback: Download cepat ke /tmp dan putar file lokal
+                # 3. Fallback: Download cepat ke /tmp dan putar file lokal (100% tahan banting)
                 print(f"[MediaPlayer] ⬇️ Mengunduh audio fallback untuk '{title_display}'...")
                 dl_file = os.path.join(self.cache_dir, "current_song.opus")
                 if os.path.exists(dl_file):
@@ -190,6 +201,9 @@ class MediaPlayerSkill:
 
                 dl_cmd = [
                     yt_bin,
+                    "--extractor-args", "youtube:player_client=android,mweb",
+                    "--no-check-certificates",
+                    "--geo-bypass",
                     "-f", "ba/b",
                     "-o", dl_file,
                     f"ytsearch1:{search_query}"
