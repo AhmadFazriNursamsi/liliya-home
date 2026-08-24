@@ -153,21 +153,23 @@ class MediaPlayerSkill:
             try:
                 yt_bin = shutil.which("yt-dlp") or "/usr/local/bin/yt-dlp" or "yt-dlp"
                 
-                # 1. Ekstraksi URL streaming ultra cepat
+                # 1. Ekstraksi URL streaming langsung bersih
                 stream_cmd = [
                     yt_bin,
                     "--no-warnings",
                     "--no-check-certificates",
                     "--no-playlist",
-                    "-f", "ba/b",
+                    "-f", "bestaudio/ba/b",
                     "-g",
-                    "--default-search", "ytsearch",
                     f"ytsearch1:{search_query}"
                 ]
-                res_url = subprocess.run(stream_cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, timeout=20)
+                res_url = subprocess.run(stream_cmd, capture_output=True, text=True, timeout=20)
                 stream_url = res_url.stdout.strip().splitlines()[0] if (res_url and res_url.stdout) else ""
 
-                # 2. Tunggu hingga suara respon TTS ("Baik, memutar...") selesai berbicara di speaker
+                if not stream_url:
+                    print(f"[MediaPlayer Warning] URL extraction stderr: {res_url.stderr.strip()[:120]}")
+
+                # 2. Tunggu hingga suara respon TTS selesai membaca
                 for _ in range(30):
                     res = subprocess.run(["pgrep", "aplay"], capture_output=True, text=True)
                     if not res.stdout.strip():
@@ -187,14 +189,32 @@ class MediaPlayerSkill:
                             self.event_bridge.broadcast_now_playing(f"🎵 {title_display}")
                         return
 
-                # Fallback: MPV direct ytdl
-                with self.lock:
-                    self.is_paused = False
-                    cmd_play = self._get_player_cmd(f"ytdl://ytsearch1:{search_query}")
-                    self.current_process = subprocess.Popen(cmd_play)
-                    print(f"[MediaPlayer] ▶️ Streaming via MPV: {title_display}")
-                    if self.event_bridge:
-                        self.event_bridge.broadcast_now_playing(f"🎵 {title_display}")
+                # 3. Fallback jika streaming URL gagal: Download cepat single audio file & putar
+                print(f"[MediaPlayer] ⬇️ Mengunduh audio cepat untuk '{title_display}'...")
+                dl_file = os.path.join(self.cache_dir, "current_song.opus")
+                if os.path.exists(dl_file):
+                    try: os.remove(dl_file)
+                    except: pass
+
+                dl_cmd = [
+                    yt_bin,
+                    "--no-warnings",
+                    "--no-playlist",
+                    "-f", "bestaudio/ba/b",
+                    "-o", dl_file,
+                    f"ytsearch1:{search_query}"
+                ]
+                subprocess.run(dl_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=25)
+
+                if os.path.exists(dl_file):
+                    with self.lock:
+                        self.is_paused = False
+                        cmd_play = self._get_player_cmd(dl_file)
+                        self.current_process = subprocess.Popen(cmd_play)
+                        print(f"[MediaPlayer] ▶️ Memutar Audio Lokal: {title_display}")
+                        if self.event_bridge:
+                            self.event_bridge.broadcast_now_playing(f"🎵 {title_display}")
+                        return
 
             except Exception as e:
                 print(f"[MediaPlayer Error] {e}")
