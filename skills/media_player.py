@@ -1,11 +1,4 @@
-import glob
-import os
-import shutil
-import signal
-import subprocess
-import threading
-import time
-from core.audio_hw import find_active_playback_device, auto_unmute_hardware_audio
+import urllib.parse
 
 RADIO_STATIONS = {
     "prambors": "https://stream.radiojar.com/7csmg90fuqruv",
@@ -16,88 +9,36 @@ RADIO_STATIONS = {
 }
 
 class MediaPlayerSkill:
+    """
+    Pemutar Media Ringan & Cepat:
+    Mengirimkan perintah redirect langsung ke YouTube di HP/Laptop pengguna
+    tanpa membebani CPU/RAM STB.
+    """
     def __init__(self, config, event_bridge=None):
         self.config = config.get("skills", {})
         self.event_bridge = event_bridge
-        self.current_process = None
         self.current_title = ""
-        self.is_paused = False
-        self.lock = threading.Lock()
-        self.cache_dir = "/tmp/stb_assistant_music"
-        os.makedirs(self.cache_dir, exist_ok=True)
 
     def set_event_bridge(self, event_bridge):
         self.event_bridge = event_bridge
 
-    def _get_player_cmd(self, file_or_url: str) -> list[str]:
-        target_dev = find_active_playback_device()
-        if shutil.which("mpv"):
-            return [
-                "mpv",
-                "--no-video",
-                "--really-quiet",
-                "--ao=alsa",
-                f"--audio-device=alsa/{target_dev}",
-                "--volume=50",
-                file_or_url
-            ]
-        elif shutil.which("ffplay"):
-            return ["ffplay", "-nodisp", "-autoexit", "-loglevel", "quiet", "-volume", "50", file_or_url]
-        return ["mpv", "--no-video", file_or_url]
-
     def pause_music(self):
-        with self.lock:
-            if self.current_process and self.current_process.poll() is None and not self.is_paused:
-                try:
-                    os.kill(self.current_process.pid, signal.SIGSTOP)
-                    self.is_paused = True
-                    print(f"[MediaPlayer] ⏸️ Musik dijeda: {self.current_title}")
-                except Exception as e:
-                    print(f"[MediaPlayer Warning] Gagal pause: {e}")
+        pass
 
     def resume_music(self):
-        with self.lock:
-            if self.current_process and self.current_process.poll() is None and self.is_paused:
-                try:
-                    os.kill(self.current_process.pid, signal.SIGCONT)
-                    self.is_paused = False
-                    print(f"[MediaPlayer] ▶️ Melanjutkan musik: {self.current_title}")
-                except Exception as e:
-                    print(f"[MediaPlayer Warning] Gagal resume: {e}")
+        pass
 
     def stop_music(self) -> str:
-        with self.lock:
-            self.is_paused = False
-            if self.current_process:
-                try:
-                    self.current_process.terminate()
-                    self.current_process.wait(timeout=1.0)
-                except Exception:
-                    try:
-                        self.current_process.kill()
-                    except Exception:
-                        pass
-                self.current_process = None
-                
-            try:
-                subprocess.run(["pkill", "-9", "mpv"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                subprocess.run(["pkill", "-9", "ffplay"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            except Exception:
-                pass
-                
-            time.sleep(0.3)
-            title = self.current_title
-            self.current_title = ""
-            if self.event_bridge:
-                self.event_bridge.broadcast_now_playing("")
-            return f"Musik '{title}' telah dihentikan." if title else "Musik telah dihentikan."
+        title = self.current_title
+        self.current_title = ""
+        if self.event_bridge:
+            self.event_bridge.broadcast_now_playing("")
+        return f"Musik '{title}' telah dihentikan." if title else "Musik telah dihentikan."
 
     def is_playing(self) -> bool:
-        with self.lock:
-            return self.current_process is not None and self.current_process.poll() is None
+        return bool(self.current_title)
 
     def play_radio(self, station_name: str) -> str:
-        self.stop_music()
         station_key = station_name.lower().strip()
         stream_url = None
         
@@ -113,111 +54,33 @@ class MediaPlayerSkill:
 
         title_display = f"Radio {station_name}"
         self.current_title = title_display
+        
         if self.event_bridge:
-            self.event_bridge.broadcast_now_playing(f"⏳ Memutar: {title_display}")
+            self.event_bridge.broadcast_now_playing(f"📻 {title_display}")
+            self.event_bridge.broadcast_event({
+                "type": "open_url",
+                "url": stream_url,
+                "title": title_display
+            })
 
-        def _play():
-            for _ in range(20):
-                res = subprocess.run(["pgrep", "aplay"], capture_output=True, text=True)
-                if not res.stdout.strip():
-                    break
-                time.sleep(0.3)
-            time.sleep(0.4)
-
-            auto_unmute_hardware_audio()
-            with self.lock:
-                self.is_paused = False
-                cmd = self._get_player_cmd(stream_url)
-                self.current_process = subprocess.Popen(cmd)
-                print(f"[MediaPlayer] 📻 Sedang Memutar Radio: {station_name}")
-                if self.event_bridge:
-                    self.event_bridge.broadcast_now_playing(title_display)
-
-        threading.Thread(target=_play, daemon=True).start()
-        return f"Memutar radio {station_name} sekarang."
+        return f"Baik, membuka streaming radio {station_name} untuk Anda."
 
     def play_youtube(self, query: str) -> str:
-        self.stop_music()
         search_query = query.strip()
-        if not any(w in search_query.lower() for w in ["lagu", "song", "dan", "official", "audio"]):
-            search_query += " audio"
-            
         title_display = query.title()
         self.current_title = title_display
+        
+        encoded_query = urllib.parse.quote_plus(search_query)
+        youtube_url = f"https://www.youtube.com/results?search_query={encoded_query}"
+
+        print(f"[MediaPlayer] 🚀 Mengirim link YouTube langsung ke HP/Laptop: {youtube_url}")
+
         if self.event_bridge:
-            self.event_bridge.broadcast_now_playing(f"⏳ Memuat: {title_display}...")
-            
-        print(f"[MediaPlayer] 🔍 Mencari lagu YouTube: '{search_query}'")
+            self.event_bridge.broadcast_now_playing(f"🎬 YouTube: {title_display}")
+            self.event_bridge.broadcast_event({
+                "type": "open_url",
+                "url": youtube_url,
+                "title": title_display
+            })
 
-        def _fetch_and_play():
-            try:
-                yt_bin = shutil.which("yt-dlp") or "/usr/local/bin/yt-dlp" or "yt-dlp"
-                
-                # 1. Ekstraksi URL streaming langsung bersih
-                stream_cmd = [
-                    yt_bin,
-                    "--no-warnings",
-                    "--no-check-certificates",
-                    "--no-playlist",
-                    "-f", "bestaudio/ba/b",
-                    "-g",
-                    f"ytsearch1:{search_query}"
-                ]
-                res_url = subprocess.run(stream_cmd, capture_output=True, text=True, timeout=20)
-                stream_url = res_url.stdout.strip().splitlines()[0] if (res_url and res_url.stdout) else ""
-
-                if not stream_url:
-                    print(f"[MediaPlayer Warning] URL extraction stderr: {res_url.stderr.strip()[:120]}")
-
-                # 2. Tunggu hingga suara respon TTS selesai membaca
-                for _ in range(30):
-                    res = subprocess.run(["pgrep", "aplay"], capture_output=True, text=True)
-                    if not res.stdout.strip():
-                        break
-                    time.sleep(0.2)
-                time.sleep(0.4)
-
-                auto_unmute_hardware_audio()
-
-                if stream_url:
-                    with self.lock:
-                        self.is_paused = False
-                        cmd_play = self._get_player_cmd(stream_url)
-                        self.current_process = subprocess.Popen(cmd_play)
-                        print(f"[MediaPlayer] ▶️ Sedang Memutar Lagu: {title_display}")
-                        if self.event_bridge:
-                            self.event_bridge.broadcast_now_playing(f"🎵 {title_display}")
-                        return
-
-                # 3. Fallback jika streaming URL gagal: Download cepat single audio file & putar
-                print(f"[MediaPlayer] ⬇️ Mengunduh audio cepat untuk '{title_display}'...")
-                dl_file = os.path.join(self.cache_dir, "current_song.opus")
-                if os.path.exists(dl_file):
-                    try: os.remove(dl_file)
-                    except: pass
-
-                dl_cmd = [
-                    yt_bin,
-                    "--no-warnings",
-                    "--no-playlist",
-                    "-f", "bestaudio/ba/b",
-                    "-o", dl_file,
-                    f"ytsearch1:{search_query}"
-                ]
-                subprocess.run(dl_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=25)
-
-                if os.path.exists(dl_file):
-                    with self.lock:
-                        self.is_paused = False
-                        cmd_play = self._get_player_cmd(dl_file)
-                        self.current_process = subprocess.Popen(cmd_play)
-                        print(f"[MediaPlayer] ▶️ Memutar Audio Lokal: {title_display}")
-                        if self.event_bridge:
-                            self.event_bridge.broadcast_now_playing(f"🎵 {title_display}")
-                        return
-
-            except Exception as e:
-                print(f"[MediaPlayer Error] {e}")
-
-        threading.Thread(target=_fetch_and_play, daemon=True).start()
-        return f"Baik, memutar {query} untuk Anda."
+        return f"Baik, membuka lagu {query} di YouTube untuk Anda."

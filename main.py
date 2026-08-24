@@ -58,6 +58,11 @@ class EventBridge:
         if self.web_server:
             self.web_server.broadcast("now_playing", {"title": title})
 
+    def broadcast_event(self, data: dict):
+        if self.web_server:
+            msg_type = data.get("type", "generic_event")
+            self.web_server.broadcast(msg_type, data)
+
     def on_web_text_command(self, text: str):
         def _exec():
             was_playing = self.media_player.is_playing()
@@ -171,6 +176,7 @@ def main():
     
     # 5. Inisialisasi Web Server & Event Bridge
     bridge = EventBridge(gemini, tts, media_player, system_ctrl, audio, smart_home_db)
+    media_player.set_event_bridge(bridge)
     web_server = WebServer(config, event_bridge=bridge, smart_home_db=smart_home_db, host="0.0.0.0", port=8080)
     bridge.set_web_server(web_server)
     gemini.set_web_server(web_server)
