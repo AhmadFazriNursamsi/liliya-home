@@ -18,6 +18,7 @@ class MediaPlayerSkill:
         self.config = config.get("skills", {})
         self.event_bridge = event_bridge
         self.current_title = ""
+        self.is_paused = False
 
     def set_event_bridge(self, event_bridge):
         self.event_bridge = event_bridge

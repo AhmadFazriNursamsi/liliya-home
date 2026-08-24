@@ -81,7 +81,7 @@ class EventBridge:
             time.sleep(0.3)
             self.audio.flush()
             
-            if self.media_player.is_paused:
+            if getattr(self.media_player, "is_paused", False):
                 self.media_player.resume_music()
                 self.broadcast_now_playing(self.media_player.current_title)
             elif self.media_player.is_playing():
