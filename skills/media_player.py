@@ -32,11 +32,11 @@ class MediaPlayerSkill:
                 "--really-quiet",
                 "--ao=alsa",
                 "--audio-device=alsa/plughw:1,0",
-                "--volume=20",
+                "--volume=50",
                 file_or_url
             ]
         elif shutil.which("ffplay"):
-            return ["ffplay", "-nodisp", "-autoexit", "-loglevel", "quiet", "-volume", "20", file_or_url]
+            return ["ffplay", "-nodisp", "-autoexit", "-loglevel", "quiet", "-volume", "50", file_or_url]
         return ["mpv", "--no-video", file_or_url]
 
     def pause_music(self):
