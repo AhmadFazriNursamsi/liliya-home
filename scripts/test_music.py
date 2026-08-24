@@ -3,6 +3,14 @@
 Test Standalone Pemutar Musik YouTube & Radio di STB
 """
 
+import os
+import sys
+
+# Tambahkan direktori root proyek ke sys.path
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if BASE_DIR not in sys.path:
+    sys.path.insert(0, BASE_DIR)
+
 import shutil
 import subprocess
 import time
@@ -30,7 +38,7 @@ def main():
     
     cmd_url = ["yt-dlp", "-f", "ba/b", "-g", "--default-search", "ytsearch", f"ytsearch1:{query}"]
     try:
-        res = subprocess.run(cmd_url, capture_output=True, text=True, timeout=12)
+        res = subprocess.run(cmd_url, capture_output=True, text=True, timeout=15)
         stream_url = res.stdout.strip().splitlines()[0] if res.stdout else ""
         if stream_url:
             print(f"    ✅ Berhasil mendapatkan Stream URL!")
