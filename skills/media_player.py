@@ -70,9 +70,13 @@ class MediaPlayerSkill:
             self.is_paused = False
             if self.current_process:
                 try:
-                    self.current_process.kill()
+                    self.current_process.terminate()
+                    self.current_process.wait(timeout=1.0)
                 except Exception:
-                    pass
+                    try:
+                        self.current_process.kill()
+                    except Exception:
+                        pass
                 self.current_process = None
                 
             try:
@@ -81,6 +85,7 @@ class MediaPlayerSkill:
             except Exception:
                 pass
                 
+            time.sleep(0.3)
             title = self.current_title
             self.current_title = ""
             if self.event_bridge:
@@ -112,7 +117,14 @@ class MediaPlayerSkill:
             self.event_bridge.broadcast_now_playing(title_display)
 
         def _play():
-            time.sleep(1.8)
+            # Tunggu jika suara TTS masih berbicara
+            for _ in range(20):
+                res = subprocess.run(["pgrep", "aplay"], capture_output=True, text=True)
+                if not res.stdout.strip():
+                    break
+                time.sleep(0.3)
+            time.sleep(0.4)
+
             auto_unmute_hardware_audio()
             with self.lock:
                 self.is_paused = False
@@ -138,13 +150,8 @@ class MediaPlayerSkill:
 
         def _fetch_and_play():
             try:
-                # Beri jeda 2 detik agar suara pembacaan TTS selesai & melepaskan soundcard ALSA
-                time.sleep(2.0)
-                auto_unmute_hardware_audio()
-
+                # 1. Dapatkan URL streaming YouTube secara paralel sambil TTS berbicara
                 yt_bin = shutil.which("yt-dlp") or "/usr/local/bin/yt-dlp" or "yt-dlp"
-
-                # 1. Dapatkan URL streaming audio langsung via yt-dlp -g
                 stream_cmd = [
                     yt_bin,
                     "-f", "ba/b",
@@ -154,6 +161,16 @@ class MediaPlayerSkill:
                 ]
                 res_url = subprocess.run(stream_cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, timeout=20)
                 stream_url = res_url.stdout.strip().splitlines()[0] if (res_url and res_url.stdout) else ""
+
+                # 2. Tunggu hingga suara respon TTS ("Baik, memutar...") selesai membaca di speaker
+                for _ in range(30):
+                    res = subprocess.run(["pgrep", "aplay"], capture_output=True, text=True)
+                    if not res.stdout.strip():
+                        break
+                    time.sleep(0.2)
+                time.sleep(0.4)
+
+                auto_unmute_hardware_audio()
 
                 if stream_url:
                     with self.lock:
@@ -165,7 +182,7 @@ class MediaPlayerSkill:
                             self.event_bridge.broadcast_now_playing(title_display)
                         return
 
-                # Fallback: mpv langsung dengan protokol ytdl://
+                # Fallback jika URL gagal
                 with self.lock:
                     self.is_paused = False
                     cmd_play = self._get_player_cmd(f"ytdl://ytsearch1:{search_query}")
