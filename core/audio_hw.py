@@ -1,27 +1,28 @@
 import subprocess
 
-def auto_unmute_hardware_audio():
+def auto_unmute_hardware_audio(volume_pct: int = 20):
     """
-    Otomatis membuka dan memaksimalkan volume hardware DAC STB (S905X & USB)
-    pada setiap kali asisten BUDI dinyalakan.
+    Otomatis membuka saklar DAC hardware STB (S905X & USB)
+    dan menyetel volume ke persentase tertentu (default: 20%).
     """
+    acodec_val = int(255 * (volume_pct / 100.0))
     cmds = [
         # S905X Built-in AV Jack Codec Routing (Card 0 dan Card 1)
         "amixer -c 0 cset name='AIU ACODEC SRC' 'I2S' 2>/dev/null || true",
         "amixer -c 0 sset 'AIU ACODEC OUT EN' on 2>/dev/null || true",
-        "amixer -c 0 cset name='ACODEC Playback Volume' 255 2>/dev/null || true",
-        "amixer -c 0 set 'Master' 100% unmute 2>/dev/null || true",
-        "amixer -c 0 set 'PCM' 100% unmute 2>/dev/null || true",
-        "amixer -c 0 set 'Speaker' 100% unmute 2>/dev/null || true",
-        "amixer -c 0 set 'ACODEC' 100% unmute 2>/dev/null || true",
+        f"amixer -c 0 cset name='ACODEC Playback Volume' {acodec_val} 2>/dev/null || true",
+        f"amixer -c 0 set 'Master' {volume_pct}% unmute 2>/dev/null || true",
+        f"amixer -c 0 set 'PCM' {volume_pct}% unmute 2>/dev/null || true",
+        f"amixer -c 0 set 'Speaker' {volume_pct}% unmute 2>/dev/null || true",
+        f"amixer -c 0 set 'ACODEC' {volume_pct}% unmute 2>/dev/null || true",
 
         "amixer -c 1 cset name='AIU ACODEC SRC' 'I2S' 2>/dev/null || true",
         "amixer -c 1 sset 'AIU ACODEC OUT EN' on 2>/dev/null || true",
-        "amixer -c 1 cset name='ACODEC Playback Volume' 255 2>/dev/null || true",
-        "amixer -c 1 set 'Master' 100% unmute 2>/dev/null || true",
-        "amixer -c 1 set 'PCM' 100% unmute 2>/dev/null || true",
-        "amixer -c 1 set 'Speaker' 100% unmute 2>/dev/null || true",
-        "amixer -c 1 set 'ACODEC' 100% unmute 2>/dev/null || true",
+        f"amixer -c 1 cset name='ACODEC Playback Volume' {acodec_val} 2>/dev/null || true",
+        f"amixer -c 1 set 'Master' {volume_pct}% unmute 2>/dev/null || true",
+        f"amixer -c 1 set 'PCM' {volume_pct}% unmute 2>/dev/null || true",
+        f"amixer -c 1 set 'Speaker' {volume_pct}% unmute 2>/dev/null || true",
+        f"amixer -c 1 set 'ACODEC' {volume_pct}% unmute 2>/dev/null || true",
     ]
     for cmd in cmds:
         try:

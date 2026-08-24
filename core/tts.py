@@ -40,12 +40,12 @@ class TTSEngine:
         auto_unmute_hardware_audio()
         target_dev = find_active_playback_device()
 
-        # 1. Konversi ke WAV 48kHz dan putar via aplay (Paling Andal & Terbukti Berbunyi di STB)
+        # 1. Konversi ke WAV 48kHz dengan volume 20% dan putar via aplay
         if shutil.which("ffmpeg") and shutil.which("aplay"):
             try:
                 wav_tmp = file_path + ".wav"
                 subprocess.run(
-                    ["ffmpeg", "-y", "-i", file_path, "-ar", "48000", "-ac", "2", wav_tmp],
+                    ["ffmpeg", "-y", "-i", file_path, "-filter:a", "volume=0.20", "-ar", "48000", "-ac", "2", wav_tmp],
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL
                 )
@@ -66,11 +66,11 @@ class TTSEngine:
             except Exception:
                 pass
 
-        # 2. Fallback mpv dengan alsa target device
+        # 2. Fallback mpv dengan alsa target device volume 20%
         if shutil.which("mpv"):
             try:
                 res = subprocess.run(
-                    ["mpv", "--no-video", "--really-quiet", "--ao=alsa", f"--audio-device=alsa/{target_dev}", "--volume=100", file_path],
+                    ["mpv", "--no-video", "--really-quiet", "--ao=alsa", f"--audio-device=alsa/{target_dev}", "--volume=20", file_path],
                     capture_output=True
                 )
                 if res.returncode == 0:
@@ -82,7 +82,7 @@ class TTSEngine:
         if shutil.which("ffplay"):
             try:
                 subprocess.run(
-                    ["ffplay", "-nodisp", "-autoexit", "-loglevel", "quiet", file_path],
+                    ["ffplay", "-nodisp", "-autoexit", "-loglevel", "quiet", "-volume", "20", file_path],
                     capture_output=True
                 )
             except Exception:
