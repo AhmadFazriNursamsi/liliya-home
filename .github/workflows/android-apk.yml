@@ -1,4 +1,4 @@
-name: Build BUDI Android APK
+name: Build Liliya Android APK
 
 on:
   push:
@@ -53,21 +53,21 @@ jobs:
       - name: Rename APK
         run: |
           mkdir -p dist
-          cp android/app/build/outputs/apk/release/app-release.apk "dist/BUDI-v1.0.${{ github.run_number }}.apk"
+          cp android/app/build/outputs/apk/release/app-release.apk "dist/Liliya-v1.0.${{ github.run_number }}.apk"
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: BUDI-v1.0.${{ github.run_number }}
+          name: Liliya-v1.0.${{ github.run_number }}
           path: dist/*.apk
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: apk-v1.0.${{ github.run_number }}
-          name: BUDI Android v1.0.${{ github.run_number }}
+          name: Liliya Android v1.0.${{ github.run_number }}
           body: |
-            APK BUDI Smart Home (asisten, saklar lampu manual & CCTV).
+            APK Liliya Smart Home (asisten, saklar perangkat & CCTV).
             Unduh file `.apk` di bawah lalu pasang di HP Android.
           files: dist/*.apk
           make_latest: true
