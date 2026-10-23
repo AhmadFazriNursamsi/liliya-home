@@ -3,8 +3,10 @@
 CAM="$1"
 DIR="${CCTV_DIR:-/srv/cctv}/$CAM"
 mkdir -p "$DIR"
+# Timestamp memakai jam STB (wallclock): bila kamera putus-sambung, timestamp RTP kamera
+# mulai dari nol lagi dan membuat file rusak (durasi salah, player terus loading).
 exec ffmpeg -nostdin -hide_banner -loglevel warning \
-  -rtsp_transport tcp -timeout 15000000 -i "rtsp://127.0.0.1:8554/$CAM" \
+  -rtsp_transport tcp -timeout 15000000 -use_wallclock_as_timestamps 1 -i "rtsp://127.0.0.1:8554/$CAM" \
   -map 0:v:0 -map 0:a:0? -c:v copy -c:a aac -b:a 32k \
   -f segment -segment_time "${CCTV_SEGMENT:-600}" -segment_atclocktime 1 -reset_timestamps 1 \
   -strftime 1 -segment_format mp4 -segment_format_options movflags=+faststart \

@@ -216,6 +216,7 @@ const BudiHome = (() => {
         let cameras = [];
         let cam = null;
         let quality = 'sd';
+        let soundOn = false;
         let mode = 'live';
         let segments = [];
         let currentFile = null;
@@ -231,6 +232,16 @@ const BudiHome = (() => {
         const ptzPad = document.getElementById('ptz-pad');
         const btnLive = document.getElementById('btn-cctv-live');
         const btnQuality = document.getElementById('btn-cctv-quality');
+        const btnSound = document.getElementById('btn-cctv-sound');
+
+        // Live view dimulai tanpa suara (seperti aplikasi Tapo) agar tidak terjadi feedback/denging
+        // saat HP berada di dekat kamera. Suara bisa dinyalakan lewat tombol.
+        function applySound() {
+            const v = liveEl && liveEl.video;
+            if (v) v.muted = !soundOn;
+            btnSound.innerHTML = soundOn ? '<i class="fa-solid fa-volume-high"></i> Suara' : '<i class="fa-solid fa-volume-xmark"></i> Bisu';
+            btnSound.classList.toggle('active', soundOn);
+        }
         const btnFull = document.getElementById('btn-cctv-full');
 
         function loadPlayer() {
@@ -263,6 +274,7 @@ const BudiHome = (() => {
             ptzPad.hidden = !cam.ptz;
             btnLive.classList.add('active');
             btnQuality.hidden = false;
+            btnSound.hidden = false;
             btnQuality.innerHTML = quality === 'hd' ? '<i class="fa-solid fa-film"></i> HD' : '<i class="fa-solid fa-gauge-simple"></i> Hemat';
             renderSegments();
             try {
@@ -275,6 +287,7 @@ const BudiHome = (() => {
             liveEl.mode = 'mse';
             liveEl.background = false;
             stage.prepend(liveEl);
+            applySound();
             liveEl.src = `/cctv/live/api/ws?src=${encodeURIComponent(quality === 'hd' ? cam.hd_stream : cam.live_stream)}`;
         }
 
@@ -287,6 +300,7 @@ const BudiHome = (() => {
             ptzPad.hidden = true;
             btnLive.classList.remove('active');
             btnQuality.hidden = true;
+            btnSound.hidden = true;
             setBadge(`REKAMAN · ${seg.date} ${seg.start.slice(0, 5)}`, true);
             const v = document.createElement('video');
             v.className = 'playback';
@@ -295,10 +309,15 @@ const BudiHome = (() => {
             v.autoplay = true;
             v.preload = 'metadata';
             v.src = `/cctv/rec/${encodeURIComponent(cam.id)}/${encodeURIComponent(file)}`;
-            v.addEventListener('ended', () => {
+            const playNext = () => {
                 const idx = segments.findIndex(s => s.file === file);
                 const next = segments[idx + 1];
                 if (next && !next.recording) playSegment(next.file);
+            };
+            v.addEventListener('ended', playNext);
+            v.addEventListener('error', () => {
+                toast(`Rekaman ${seg.start.slice(0, 5)} tidak bisa diputar, lanjut ke berikutnya.`);
+                playNext();
             });
             stage.prepend(v);
             renderSegments();
@@ -378,6 +397,11 @@ const BudiHome = (() => {
         ptzPad.addEventListener('click', e => { const b = e.target.closest('[data-dir]'); if (b) ptz(b.dataset.dir); });
         btnLive.addEventListener('click', () => { meta.hidden = true; startLive(); });
         btnQuality.addEventListener('click', () => { quality = quality === 'hd' ? 'sd' : 'hd'; startLive(); });
+        btnSound.addEventListener('click', () => {
+            soundOn = !soundOn;
+            applySound();
+            if (soundOn) toast('Suara aktif. Jauhkan HP dari kamera agar tidak berdenging.');
+        });
         btnFull.addEventListener('click', () => {
             const target = stage.querySelector('video') || stage;
             const req = target.requestFullscreen || target.webkitRequestFullscreen || target.webkitEnterFullscreen;
