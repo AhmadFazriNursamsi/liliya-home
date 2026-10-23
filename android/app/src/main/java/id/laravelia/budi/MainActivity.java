@@ -42,7 +42,7 @@ import org.json.JSONObject;
 import java.util.ArrayList;
 
 /**
- * Aplikasi BUDI: membungkus dashboard BUDI (asisten, saklar rumah & CCTV) dalam WebView,
+ * Aplikasi Liliya: membungkus dashboard server BUDI (asisten, saklar rumah & CCTV) dalam WebView,
  * ditambah pengenal suara native Android karena WebView tidak mendukung Web Speech API.
  */
 public class MainActivity extends Activity {
@@ -66,7 +66,7 @@ public class MainActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         root = new FrameLayout(this);
-        root.setBackgroundColor(Color.parseColor("#090d16"));
+        root.setBackgroundColor(Color.parseColor("#FBF6EE"));
         root.setFitsSystemWindows(true);
         setContentView(root);
 
@@ -91,7 +91,7 @@ public class MainActivity extends Activity {
         s.setMediaPlaybackRequiresUserGesture(false);
         s.setSupportMultipleWindows(false);
         s.setUserAgentString(s.getUserAgentString() + " BudiAndroid/" + appVersion());
-        webView.setBackgroundColor(Color.parseColor("#090d16"));
+        webView.setBackgroundColor(Color.parseColor("#FBF6EE"));
 
         CookieManager cookies = CookieManager.getInstance();
         cookies.setAcceptCookie(true);
@@ -118,7 +118,7 @@ public class MainActivity extends Activity {
             @Override
             public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
                 if (request.isForMainFrame()) {
-                    showError("Tidak bisa terhubung ke BUDI.\n" + error.getDescription());
+                    showError("Tidak bisa terhubung ke server.\n" + error.getDescription());
                 }
             }
         });
@@ -169,10 +169,10 @@ public class MainActivity extends Activity {
                 req.addRequestHeader("Cookie", CookieManager.getInstance().getCookie(url));
                 req.addRequestHeader("User-Agent", userAgent);
                 req.setTitle(fileName);
-                req.setDescription("Rekaman CCTV BUDI");
+                req.setDescription("Rekaman CCTV Liliya");
                 req.setMimeType(mimeType);
                 req.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED);
-                req.setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, "BUDI/" + fileName);
+                req.setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, "Liliya/" + fileName);
                 ((DownloadManager) getSystemService(DOWNLOAD_SERVICE)).enqueue(req);
                 Toast.makeText(this, "Mengunduh " + fileName, Toast.LENGTH_SHORT).show();
             } catch (Exception e) {
@@ -214,18 +214,18 @@ public class MainActivity extends Activity {
         box.setOrientation(LinearLayout.VERTICAL);
         box.setGravity(Gravity.CENTER);
         box.setPadding(dp(32), dp(32), dp(32), dp(32));
-        box.setBackgroundColor(Color.parseColor("#090d16"));
+        box.setBackgroundColor(Color.parseColor("#FBF6EE"));
 
         TextView title = new TextView(this);
-        title.setText("BUDI tidak terjangkau");
-        title.setTextColor(Color.WHITE);
+        title.setText("Liliya tidak terjangkau");
+        title.setTextColor(Color.parseColor("#3A241C"));
         title.setTextSize(20);
         title.setGravity(Gravity.CENTER);
         box.addView(title);
 
         TextView msg = new TextView(this);
         msg.setText(message + "\n\nServer: " + getServerUrl());
-        msg.setTextColor(Color.parseColor("#94a3b8"));
+        msg.setTextColor(Color.parseColor("#85665A"));
         msg.setGravity(Gravity.CENTER);
         msg.setPadding(0, dp(12), 0, dp(24));
         box.addView(msg);
@@ -264,7 +264,7 @@ public class MainActivity extends Activity {
         wrap.addView(input);
 
         new AlertDialog.Builder(this)
-                .setTitle("Alamat Server BUDI")
+                .setTitle("Alamat Server")
                 .setMessage("Dari mana saja: " + DEFAULT_URL + "\nWiFi rumah: " + LAN_URL)
                 .setView(wrap)
                 .setPositiveButton("Simpan", (d, w) -> saveServerUrl(input.getText().toString()))

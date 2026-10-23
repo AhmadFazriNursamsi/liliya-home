@@ -1,10 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="BudiTheme" parent="android:Theme.Material.NoActionBar">
-        <item name="android:colorPrimary">#090d16</item>
-        <item name="android:colorAccent">#00d2ff</item>
-        <item name="android:statusBarColor">#090d16</item>
-        <item name="android:navigationBarColor">#090d16</item>
-        <item name="android:windowBackground">#090d16</item>
+    <style name="BudiTheme" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:colorPrimary">#FBF6EE</item>
+        <item name="android:colorAccent">#F7996A</item>
+        <item name="android:statusBarColor">#FBF6EE</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:navigationBarColor">#FFFFFF</item>
+        <item name="android:windowLightNavigationBar">true</item>
+        <item name="android:windowBackground">#FBF6EE</item>
     </style>
 </resources>

@@ -3,165 +3,91 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <meta name="theme-color" content="#090d16">
+    <meta name="theme-color" content="#FBF6EE">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="apple-mobile-web-app-title" content="BUDI Assistant">
-    <title>STB Smart Voice Assistant & Smart Display</title>
-    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
-    <meta http-equiv="Pragma" content="no-cache">
-    <meta http-equiv="Expires" content="0">
-    <link rel="stylesheet" href="/static/css/style.css?v=20260830_clean_v1">
-    <link rel="stylesheet" href="/static/css/home.css?v=20261024_v5">
-    <!-- Google Fonts & FontAwesome -->
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="apple-mobile-web-app-title" content="Liliya">
+    <title>Liliya</title>
+    <link rel="icon" type="image/png" href="/static/img/logo-192.png">
+    <link rel="apple-touch-icon" href="/static/img/logo-192.png">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="/static/css/liliya.css?v=20261024_v1">
+    <link rel="stylesheet" href="/static/css/home.css?v=20261024_v9">
 </head>
-<body class="theme-dark">
-    <div class="ambient-background"></div>
-
+<body class="state-idle">
     <div class="app-container" data-tab="assistant">
-        <!-- Top Status Bar -->
-        <header class="top-bar">
-            <div class="top-bar-main">
-                <div class="clock-widget">
-                    <div id="clock-time" class="time-display">12:00</div>
-                    <div id="clock-date" class="date-display">Jumat, 21 Agustus 2026</div>
-                </div>
 
-                <div class="header-center">
-                    <div class="assistant-badge">
-                        <span class="pulse-dot"></span>
-                        <span id="assistant-status-text">Standby</span>
-                    </div>
-                </div>
+        <!-- Header -->
+        <header class="app-header">
+            <div class="brand">
+                <img src="/static/img/logo-192.png" alt="" class="brand-logo" width="36" height="36">
+                <span class="brand-name">Liliya</span>
             </div>
-
-            <div class="top-right-metrics">
-                <!-- Token & API Monitor Badge -->
-                <div class="token-monitor-badge" id="token-badge" title="Penggunaan Token & Kunci AI">
-                    <div class="metric-item">
-                        <i class="fa-solid fa-coins token-icon"></i>
-                        <span id="token-count-val">0</span> <small>tok</small>
-                    </div>
-                    <div class="metric-divider"></div>
-                    <div class="metric-item">
-                        <i class="fa-solid fa-bolt model-icon"></i>
-                        <span id="active-model-val">gemini-3.5-flash</span>
-                    </div>
-                    <div class="metric-divider"></div>
-                    <div class="metric-item">
-                        <i class="fa-solid fa-key key-icon"></i>
-                        <span id="active-key-val">Keys: 4</span>
-                    </div>
-                </div>
-
-                <!-- Weather -->
-                <div class="weather-box" id="weather-box">
-                    <i class="fa-solid fa-cloud-sun weather-icon" id="weather-icon"></i>
-                    <div class="weather-info">
-                        <span id="weather-temp" class="weather-temp">--°C</span>
-                        <span id="weather-city" class="weather-city">Jakarta</span>
-                    </div>
-                </div>
+            <div class="header-actions">
+                <span class="conn-dot" id="conn-dot" title="Terhubung"></span>
+                <button class="icon-btn" id="btn-app-settings" title="Pengaturan aplikasi" aria-label="Pengaturan aplikasi" hidden><i class="fa-solid fa-gear"></i></button>
+                <a class="icon-btn" href="/logout" title="Keluar" aria-label="Keluar"><i class="fa-solid fa-arrow-right-from-bracket"></i></a>
             </div>
         </header>
 
-        <!-- Tab Navigasi: Asisten / Rumah / CCTV -->
-        <nav class="tab-bar" aria-label="Navigasi">
-            <button class="tab-btn" data-tab="assistant"><i class="fa-solid fa-wand-magic-sparkles"></i> <span>Asisten</span></button>
-            <button class="tab-btn" data-tab="home"><i class="fa-solid fa-house-signal"></i> <span>Rumah</span></button>
-            <button class="tab-btn" data-tab="cctv"><i class="fa-solid fa-video"></i> <span>CCTV</span></button>
-            <button class="tab-btn icon-only" id="btn-app-settings" title="Pengaturan Aplikasi" hidden><i class="fa-solid fa-gear"></i></button>
-            <a class="tab-btn icon-only" href="/logout" title="Keluar"><i class="fa-solid fa-right-from-bracket"></i></a>
-        </nav>
+        <!-- Asisten -->
+        <section class="tab-panel" id="panel-assistant">
+            <div class="assistant-stage">
+                <button class="mic-button" id="orb-wrapper" aria-label="Ketuk untuk bicara">
+                    <span class="mic-ring"></span>
+                    <i class="fa-solid fa-microphone" id="mic-icon"></i>
+                </button>
+                <p class="assistant-status" id="assistant-status-text">Ketuk untuk bicara</p>
+            </div>
 
-        <!-- Main Display / Assistant Visualizer Area -->
-        <main class="main-display">
-            <!-- Glowing Visualizer Orb -->
-            <div class="visualizer-container">
-                <div class="orb-wrapper" id="orb-wrapper" title="Klik untuk berbicara dengan Budi">
-                    <div class="glow-ring ring-1"></div>
-                    <div class="glow-ring ring-2"></div>
-                    <div class="glow-ring ring-3"></div>
-                    <div class="core-orb" id="core-orb">
-                        <i class="fa-solid fa-microphone mic-icon" id="mic-icon"></i>
-                    </div>
+            <div class="conversation" id="subtitle-card">
+                <div class="bubble user" id="user-speech" hidden>
+                    <p id="user-speech-text"></p>
                 </div>
-
-                <!-- Animated Soundwave Bars -->
-                <div class="sound-wave" id="sound-wave">
-                    <span class="bar"></span>
-                    <span class="bar"></span>
-                    <span class="bar"></span>
-                    <span class="bar"></span>
-                    <span class="bar"></span>
-                    <span class="bar"></span>
-                    <span class="bar"></span>
-                    <span class="bar"></span>
+                <div class="bubble assistant" id="assistant-speech">
+                    <img src="/static/img/logo-192.png" alt="" class="bubble-avatar" width="28" height="28">
+                    <p id="assistant-speech-text">Halo! Mau dibantu apa hari ini? Ketuk mikrofon atau ketik perintah di bawah.</p>
                 </div>
             </div>
 
-            <!-- Live Speech & Response Subtitle Card With Speaker Labels -->
-            <div class="subtitle-card" id="subtitle-card">
-                <!-- User Speech Bubble With Label -->
-                <div class="speech-bubble user-speech" id="user-speech" style="display: none;">
-                    <div class="bubble-avatar user-avatar">
-                        <i class="fa-solid fa-user"></i>
-                    </div>
-                    <div class="bubble-body">
-                        <div class="speaker-tag user-tag">
-                            <span class="tag-dot"></span> 👤 ANDA
-                        </div>
-                        <p id="user-speech-text">Mendengarkan ucapan Anda...</p>
-                    </div>
-                </div>
-
-                <!-- Assistant Speech Bubble With Label -->
-                <div class="speech-bubble assistant-speech" id="assistant-speech">
-                    <div class="bubble-avatar assistant-avatar">
-                        <i class="fa-solid fa-wand-magic-sparkles"></i>
-                    </div>
-                    <div class="bubble-body">
-                        <div class="speaker-tag assistant-tag">
-                            <span class="tag-dot"></span> 🤖 BUDI
-                        </div>
-                        <p id="assistant-speech-text">Halo! Saya Budi, asisten pintar Anda. Klik tombol 'Bicara' di bawah atau ketuk logo mic untuk memberi perintah suara.</p>
-                    </div>
-                </div>
+            <div class="media-card" id="media-card" hidden>
+                <span class="media-icon"><i class="fa-solid fa-music"></i></span>
+                <span class="media-title" id="media-title">Tidak ada musik diputar</span>
+                <button class="icon-btn" id="btn-stop-music" title="Hentikan musik" aria-label="Hentikan musik"><i class="fa-solid fa-stop"></i></button>
             </div>
-        </main>
 
-        <!-- Panel Saklar Smart Home Manual -->
+            <form class="composer" id="text-cmd-form">
+                <input type="text" id="text-input" placeholder="Ketik perintah..." autocomplete="off" aria-label="Perintah">
+                <button type="submit" class="send-btn" id="send-btn" aria-label="Kirim"><i class="fa-solid fa-arrow-up"></i></button>
+            </form>
+        </section>
+
+        <!-- Rumah: saklar manual -->
         <section class="tab-panel" id="panel-home">
             <div class="panel-head">
                 <div>
-                    <h2>Saklar Rumah</h2>
+                    <h2>Rumah</h2>
                     <div class="sub" id="home-summary">Memuat perangkat...</div>
                 </div>
-                <div class="pill-row">
-                    <button class="pill-btn on" id="btn-all-on"><i class="fa-solid fa-lightbulb"></i> Semua Nyala</button>
-                    <button class="pill-btn" id="btn-all-off"><i class="fa-regular fa-lightbulb"></i> Semua Mati</button>
-                    <button class="pill-btn active" id="btn-add-device"><i class="fa-solid fa-plus"></i> Tambah</button>
-                </div>
+                <button class="pill-btn primary" id="btn-add-device"><i class="fa-solid fa-plus"></i> Tambah</button>
             </div>
-            <div id="home-rooms" class="segment-hours"></div>
+            <div class="pill-row">
+                <button class="pill-btn" id="btn-all-on"><i class="fa-solid fa-lightbulb"></i> Semua nyala</button>
+                <button class="pill-btn" id="btn-all-off"><i class="fa-regular fa-lightbulb"></i> Semua mati</button>
+            </div>
+            <div id="home-rooms" class="room-list"></div>
         </section>
 
-        <!-- Modal Tambah / Edit Perangkat -->
-        <div class="modal" id="device-modal" role="dialog" aria-modal="true" hidden>
-            <div class="modal-card"></div>
-        </div>
-
-        <!-- Panel CCTV: Live View, Pan-Tilt & Riwayat Rekaman -->
+        <!-- CCTV -->
         <section class="tab-panel" id="panel-cctv">
             <div class="panel-head">
                 <div>
                     <h2 id="cctv-title">CCTV</h2>
-                    <div class="sub">Live & rekaman tersimpan di SSD STB</div>
+                    <div class="sub">Live & rekaman</div>
                 </div>
                 <div class="pill-row" id="cctv-cameras"></div>
             </div>
@@ -175,476 +101,257 @@
                         <button class="down" data-dir="down" aria-label="Bawah"><i class="fa-solid fa-chevron-down"></i></button>
                     </div>
                 </div>
-                <div class="cctv-toolbar" style="margin-top:10px">
+                <div class="cctv-toolbar">
                     <div class="pill-row">
                         <button class="pill-btn active" id="btn-cctv-live"><i class="fa-solid fa-tower-broadcast"></i> Live</button>
                         <button class="pill-btn" id="btn-cctv-quality"><i class="fa-solid fa-gauge-simple"></i> Hemat</button>
-                        <button class="pill-btn" id="btn-cctv-sound" title="Suara live (mati agar tidak berdenging bila HP dekat kamera)"><i class="fa-solid fa-volume-xmark"></i> Bisu</button>
+                        <button class="pill-btn" id="btn-cctv-sound" title="Suara live"><i class="fa-solid fa-volume-xmark"></i> Bisu</button>
                     </div>
                     <div class="pill-row">
-                        <button class="pill-btn" id="btn-cctv-refresh" title="Muat ulang rekaman"><i class="fa-solid fa-rotate"></i></button>
-                        <button class="pill-btn" id="btn-cctv-full" title="Layar penuh"><i class="fa-solid fa-expand"></i></button>
+                        <button class="pill-btn icon" id="btn-cctv-refresh" title="Muat ulang rekaman" aria-label="Muat ulang rekaman"><i class="fa-solid fa-rotate"></i></button>
+                        <button class="pill-btn icon" id="btn-cctv-full" title="Layar penuh" aria-label="Layar penuh"><i class="fa-solid fa-expand"></i></button>
                     </div>
                 </div>
-                <div class="playback-meta" id="cctv-playback-meta" style="margin-top:10px" hidden></div>
-                <div class="panel-head" style="margin-top:16px">
-                    <h2 style="font-size:1rem">Riwayat Rekaman</h2>
-                </div>
+                <div class="playback-meta" id="cctv-playback-meta" hidden></div>
+                <h3 class="section-title">Riwayat rekaman</h3>
                 <div class="backup-note" id="cctv-backup" hidden></div>
-                <div class="pill-row" id="cctv-dates" style="margin:8px 0 12px"></div>
+                <div class="pill-row" id="cctv-dates"></div>
                 <div class="segment-hours" id="cctv-segments"></div>
             </div>
         </section>
 
-        <!-- Bottom Music & Control Dock -->
-        <footer class="bottom-dock">
-            <!-- Now Playing Card (Shows automatically when music is playing) -->
-            <div class="media-card" id="media-card">
-                <div class="media-art" id="media-art">
-                    <i class="fa-solid fa-music"></i>
-                </div>
-                <div class="media-details">
-                    <span class="media-title" id="media-title">Tidak ada musik diputar</span>
-                    <span class="media-artist" id="media-artist">STB Media Engine</span>
-                </div>
-                <div class="media-controls">
-                    <button class="ctrl-btn" id="btn-stop-music" title="Hentikan Musik">
-                        <i class="fa-solid fa-stop"></i>
-                    </button>
-                </div>
-            </div>
-
-            <!-- Interactive Web Input & Quick Actions -->
-            <div class="dock-actions">
-                <form class="text-cmd-form" id="text-cmd-form">
-                    <input type="text" id="text-input" placeholder="Ketik atau klik Bicara..." autocomplete="off">
-                    <button type="button" class="action-btn" id="btn-voice-input" title="Klik untuk berbicara via Mic HP/Laptop">
-                        <i class="fa-solid fa-microphone"></i> <span>Bicara</span>
-                    </button>
-                    <button type="submit" class="send-btn" id="send-btn" title="Kirim Perintah Teks">
-                        <i class="fa-solid fa-paper-plane"></i>
-                    </button>
-                </form>
-
-                <div class="quick-buttons">
-                    <button class="action-btn" id="btn-quick-music" title="Putar Musik Santai">
-                        <i class="fa-solid fa-music"></i> <span>Musik</span>
-                    </button>
-                    <button class="action-btn" id="btn-quick-lamp" title="Kontrol Lampu Smart Home">
-                        <i class="fa-solid fa-lightbulb"></i> <span>Lampu</span>
-                    </button>
-                    <button class="action-btn" id="btn-quick-weather" title="Cek Cuaca Hari Ini">
-                        <i class="fa-solid fa-cloud-sun"></i> <span>Cuaca</span>
-                    </button>
-                    <button class="action-btn" id="btn-fullscreen" title="Full Screen Mode">
-                        <i class="fa-solid fa-expand"></i>
-                    </button>
-                </div>
-            </div>
-        </footer>
+        <!-- Modal Tambah / Edit Perangkat -->
+        <div class="modal" id="device-modal" role="dialog" aria-modal="true" hidden>
+            <div class="modal-card"></div>
+        </div>
     </div>
 
-    <script src="/static/js/home.js?v=20261024_v6"></script>
+    <!-- Navigasi bawah -->
+    <nav class="bottom-nav" aria-label="Navigasi">
+        <button class="tab-btn" data-tab="assistant"><i class="fa-solid fa-microphone"></i><span>Asisten</span></button>
+        <button class="tab-btn" data-tab="home"><i class="fa-solid fa-house"></i><span>Rumah</span></button>
+        <button class="tab-btn" data-tab="cctv"><i class="fa-solid fa-video"></i><span>CCTV</span></button>
+    </nav>
+
+    <script src="/static/js/home.js?v=20261024_v8"></script>
     <script>
 // =========================================================
-// STB Smart Voice Assistant & Smart Display (BUDI)
-// Universal HTML5 SpeechRecognition & WebUI Controller
+// Liliya — Asisten suara (WebSocket ke server BUDI)
 // =========================================================
 
 let ws = null;
 let reconnectTimer = null;
 let isRecording = false;
 
-// DOM Elements
-const orbWrapper = document.getElementById('orb-wrapper');
-const coreOrb = document.getElementById('core-orb');
+const micButton = document.getElementById('orb-wrapper');
 const statusText = document.getElementById('assistant-status-text');
 const userSpeech = document.getElementById('user-speech');
 const userSpeechText = document.getElementById('user-speech-text');
-const assistantSpeech = document.getElementById('assistant-speech');
 const assistantSpeechText = document.getElementById('assistant-speech-text');
-const clockTime = document.getElementById('clock-time');
-const clockDate = document.getElementById('clock-date');
-const mediaTitle = document.getElementById('media-title');
-const mediaArtist = document.getElementById('media-artist');
 const mediaCard = document.getElementById('media-card');
+const mediaTitle = document.getElementById('media-title');
 const btnStopMusic = document.getElementById('btn-stop-music');
 const textCmdForm = document.getElementById('text-cmd-form');
 const textInput = document.getElementById('text-input');
-const btnVoiceInput = document.getElementById('btn-voice-input');
-const btnFullscreen = document.getElementById('btn-fullscreen');
-const btnQuickMusic = document.getElementById('btn-quick-music');
-const btnQuickLamp = document.getElementById('btn-quick-lamp');
-const btnQuickWeather = document.getElementById('btn-quick-weather');
-const btnQuickNews = document.getElementById('btn-quick-news');
+const connDot = document.getElementById('conn-dot');
 
-// 1. Clock & Date Display
-const DAYS_ID = ["Minggu", "Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu"];
-const MONTHS_ID = [
-    "Januari", "Februari", "Maret", "April", "Mei", "Juni",
-    "Juli", "Agustus", "September", "Oktober", "November", "Desember"
-];
+const STATE_LABELS = {
+    idle: "Ketuk untuk bicara",
+    listening: "Mendengarkan...",
+    thinking: "Memproses...",
+    speaking: "Menjawab..."
+};
 
-function updateClock() {
-    if (!clockTime || !clockDate) return;
-    const now = new Date();
-    const hours = String(now.getHours()).padStart(2, '0');
-    const minutes = String(now.getMinutes()).padStart(2, '0');
-    clockTime.textContent = `${hours}:${minutes}`;
-
-    const day = DAYS_ID[now.getDay()];
-    const date = now.getDate();
-    const month = MONTHS_ID[now.getMonth()];
-    const year = now.getFullYear();
-    clockDate.textContent = `${day}, ${date} ${month} ${year}`;
-}
-setInterval(updateClock, 1000);
-updateClock();
-
-// 2. Set Orb State (idle, listening, thinking, speaking)
 function setOrbState(state) {
-    document.body.className = `theme-dark state-${state}`;
-    if (statusText) {
-        const labels = {
-            "idle": "Standby",
-            "listening": "🔴 Merekam...",
-            "thinking": "Memproses...",
-            "speaking": "Membacakan Respon..."
-        };
-        statusText.textContent = labels[state] || state;
-    }
+    document.body.className = `state-${state}`;
+    if (statusText) statusText.textContent = STATE_LABELS[state] || state;
 }
-setOrbState("idle");
 
-// 3. Real-Time Streaming Speech Recognition with Live Subtitles & Auto-Stop
+function showUserText(text) {
+    userSpeech.hidden = false;
+    userSpeechText.textContent = text;
+}
+
+function showAssistantText(text) {
+    assistantSpeechText.textContent = text;
+}
+
+// ---------- Input suara ----------
+// Aplikasi Android memakai pengenal suara native; browser memakai Web Speech API.
+const nativeApp = window.BudiAndroid || null;
 let recognition = null;
 let finalRecordedText = "";
 
-function initSpeechEngine() {
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (SpeechRecognition) {
-        recognition = new SpeechRecognition();
-        recognition.lang = 'id-ID';
-        recognition.continuous = false;
-        recognition.interimResults = true;
-
-        recognition.onstart = () => {
-            isRecording = true;
-            finalRecordedText = "";
-            setOrbState("listening");
-            if (btnVoiceInput) {
-                btnVoiceInput.innerHTML = '<i class="fa-solid fa-microphone-lines fa-fade"></i> <span>Merekam...</span>';
-                btnVoiceInput.style.background = 'linear-gradient(135deg, #ff0844, #ffb199)';
-                btnVoiceInput.style.color = '#fff';
-            }
-            if (userSpeech) {
-                userSpeech.style.display = "flex";
-                userSpeech.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-            }
-            if (userSpeechText) userSpeechText.textContent = "Mendengarkan ucapan Anda...";
-        };
-
-        recognition.onresult = (event) => {
-            let liveText = "";
-            for (let i = 0; i < event.results.length; ++i) {
-                liveText += event.results[i][0].transcript;
-            }
-            if (liveText) {
-                finalRecordedText = liveText;
-                if (userSpeech) userSpeech.style.display = "flex";
-                if (userSpeechText) userSpeechText.textContent = liveText;
-            }
-        };
-
-        recognition.onerror = (event) => {
-            console.warn("[Speech Error]", event.error);
-            isRecording = false;
-            setOrbState("idle");
-            resetVoiceButton();
-        };
-
-        recognition.onend = () => {
-            isRecording = false;
-            resetVoiceButton();
-            if (finalRecordedText && finalRecordedText.trim()) {
-                console.log(`[Voice Complete] 🗣️ Perintah: "${finalRecordedText}"`);
-                sendCommand(finalRecordedText.trim());
-            } else {
-                setOrbState("idle");
-            }
-        };
-    }
-}
-initSpeechEngine();
-
-function resetVoiceButton() {
-    if (btnVoiceInput) {
-        btnVoiceInput.innerHTML = '<i class="fa-solid fa-microphone"></i> <span>Bicara</span>';
-        btnVoiceInput.style.background = 'linear-gradient(135deg, #00f2fe, #4facfe)';
-        btnVoiceInput.style.color = '#000';
-    }
+function startListeningUi() {
+    isRecording = true;
+    finalRecordedText = "";
+    setOrbState("listening");
+    showUserText("...");
 }
 
-// Aplikasi Android (APK BUDI): pakai pengenal suara native Android karena WebView tidak mendukung Web Speech API
-const nativeApp = window.BudiAndroid || null;
+function stopListeningUi() {
+    isRecording = false;
+}
+
 window.budiNativeSpeech = {
-    start() {
-        isRecording = true;
-        finalRecordedText = "";
-        setOrbState("listening");
-        if (btnVoiceInput) {
-            btnVoiceInput.innerHTML = '<i class="fa-solid fa-microphone-lines fa-fade"></i> <span>Merekam...</span>';
-            btnVoiceInput.style.background = 'linear-gradient(135deg, #ff0844, #ffb199)';
-            btnVoiceInput.style.color = '#fff';
-        }
-        if (userSpeech) userSpeech.style.display = "flex";
-        if (userSpeechText) userSpeechText.textContent = "Mendengarkan ucapan Anda...";
-    },
-    partial(text) {
-        if (text && userSpeechText) userSpeechText.textContent = text;
-    },
+    start() { startListeningUi(); },
+    partial(text) { if (text) showUserText(text); },
     result(text) {
-        isRecording = false;
-        resetVoiceButton();
+        stopListeningUi();
         if (text && text.trim()) sendCommand(text.trim());
-        else setOrbState("idle");
+        else { setOrbState("idle"); userSpeech.hidden = true; }
     },
     error(message) {
-        isRecording = false;
-        resetVoiceButton();
+        stopListeningUi();
         setOrbState("idle");
-        if (userSpeechText) userSpeechText.textContent = message || "Suara tidak terdengar, coba lagi.";
+        userSpeech.hidden = true;
+        showAssistantText(message || "Suara tidak terdengar, coba lagi.");
     }
 };
 
-if (nativeApp) {
-    const btnAppSettings = document.getElementById('btn-app-settings');
-    if (btnAppSettings) {
-        btnAppSettings.hidden = false;
-        btnAppSettings.addEventListener('click', () => nativeApp.openSettings());
-    }
+function initSpeechEngine() {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) return;
+    recognition = new SpeechRecognition();
+    recognition.lang = 'id-ID';
+    recognition.continuous = false;
+    recognition.interimResults = true;
+    recognition.onstart = startListeningUi;
+    recognition.onresult = (event) => {
+        let liveText = "";
+        for (let i = 0; i < event.results.length; ++i) liveText += event.results[i][0].transcript;
+        if (liveText) {
+            finalRecordedText = liveText;
+            showUserText(liveText);
+        }
+    };
+    recognition.onerror = () => {
+        stopListeningUi();
+        setOrbState("idle");
+    };
+    recognition.onend = () => {
+        stopListeningUi();
+        if (finalRecordedText.trim()) sendCommand(finalRecordedText.trim());
+        else { setOrbState("idle"); userSpeech.hidden = true; }
+    };
 }
 
-function toggleBrowserMic() {
+function toggleMic() {
     if (nativeApp) {
         if (isRecording) nativeApp.stopSpeech(); else nativeApp.startSpeech();
         return;
     }
+    if (!recognition) initSpeechEngine();
     if (!recognition) {
-        initSpeechEngine();
-    }
-    if (!recognition) {
-        if (assistantSpeechText) assistantSpeechText.textContent = "Browser ini tidak mendukung input suara. Silakan ketik perintah Anda.";
+        showAssistantText("Browser ini tidak mendukung input suara. Silakan ketik perintah Anda.");
         return;
     }
     if (isRecording) {
         try { recognition.stop(); } catch (e) {}
-        isRecording = false;
-        resetVoiceButton();
-    } else {
-        try {
-            recognition.start();
-        } catch (e) {
-            console.warn("Recognition start error:", e);
-            try {
-                recognition.abort();
-                setTimeout(() => {
-                    try { recognition.start(); } catch (err) {}
-                }, 100);
-            } catch (err) {}
-        }
+        return;
+    }
+    try {
+        recognition.start();
+    } catch (e) {
+        try { recognition.abort(); setTimeout(() => { try { recognition.start(); } catch (err) {} }, 100); } catch (err) {}
     }
 }
 
-// 4. WebSocket Connection
+if (nativeApp) {
+    const btnAppSettings = document.getElementById('btn-app-settings');
+    btnAppSettings.hidden = false;
+    btnAppSettings.addEventListener('click', () => nativeApp.openSettings());
+}
+
+// ---------- WebSocket ----------
+function setConnected(on) {
+    connDot.classList.toggle('offline', !on);
+    connDot.title = on ? 'Terhubung' : 'Terputus, mencoba menghubungkan ulang...';
+}
+
 function connectWebSocket() {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${protocol}//${window.location.host}/ws`;
-
-    console.log(`[WS] Menghubungkan ke: ${wsUrl}`);
-    ws = new WebSocket(wsUrl);
+    ws = new WebSocket(`${protocol}//${window.location.host}/ws`);
 
     ws.onopen = () => {
-        console.log("[WS] ✅ Terhubung ke STB Assistant Server.");
+        setConnected(true);
         if (reconnectTimer) {
             clearInterval(reconnectTimer);
             reconnectTimer = null;
         }
     };
-
     ws.onmessage = (event) => {
         try {
-            const data = JSON.parse(event.data);
-            handleServerEvent(data);
+            handleServerEvent(JSON.parse(event.data));
         } catch (e) {
             console.error("[WS Error]", e);
         }
     };
-
     ws.onclose = () => {
-        console.warn("[WS] ⚠️ Koneksi terputus. Mencoba reconnect dalam 3 detik...");
+        setConnected(false);
         setOrbState("idle");
-        if (!reconnectTimer) {
-            reconnectTimer = setInterval(connectWebSocket, 3000);
-        }
+        if (!reconnectTimer) reconnectTimer = setInterval(connectWebSocket, 3000);
     };
 }
 
-// 5. Handle Incoming Events from STB
 function handleServerEvent(data) {
     const type = data.type;
     if (typeof BudiHome !== 'undefined') BudiHome.onEvent(data);
 
     if (type === "state_change") {
         setOrbState(data.state);
-        if (data.state === "listening") {
-            if (userSpeech) {
-                userSpeech.style.display = "flex";
-                userSpeech.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-            }
-            if (userSpeechText) userSpeechText.textContent = "Sedang mendengarkan ucapan Anda...";
-        }
     } else if (type === "user_voice_command") {
-        if (userSpeech) {
-            userSpeech.style.display = "flex";
-            userSpeech.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-        }
-        if (userSpeechText) userSpeechText.textContent = data.text;
+        showUserText(data.text);
     } else if (type === "assistant_response") {
-        if (assistantSpeech) {
-            assistantSpeech.style.display = "flex";
-            assistantSpeech.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-        }
-        if (assistantSpeechText) assistantSpeechText.textContent = data.text;
-    } else if (type === "open_url") {
-        if (data.url) {
-            console.log(`[Redirect] 🚀 Membuka URL di browser: ${data.url}`);
-            try {
-                if (nativeApp) nativeApp.openExternal(data.url); else window.open(data.url, '_blank');
-            } catch (e) {
-                console.warn("[Redirect Error]", e);
-            }
-            if (assistantSpeech) {
-                assistantSpeech.style.display = "flex";
-                assistantSpeech.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-            }
-            if (assistantSpeechText) {
-                assistantSpeechText.innerHTML = `${assistantSpeechText.textContent || 'Membuka YouTube...'} <br><a href="${data.url}" target="_blank" class="yt-mobile-btn"><i class="fa-brands fa-youtube"></i> Buka di YouTube</a>`;
-            }
-        }
+        showAssistantText(data.text);
+    } else if (type === "open_url" && data.url) {
+        try {
+            if (nativeApp) nativeApp.openExternal(data.url); else window.open(data.url, '_blank');
+        } catch (e) {}
+        const link = document.createElement('a');
+        link.href = data.url;
+        link.target = '_blank';
+        link.rel = 'noopener';
+        link.className = 'inline-link';
+        link.innerHTML = '<i class="fa-brands fa-youtube"></i> Buka di YouTube';
+        assistantSpeechText.append(document.createElement('br'), link);
     } else if (type === "now_playing") {
-        const hasMusic = data.title && data.title !== "Tidak ada musik diputar" && data.title.trim() !== "";
-        if (mediaTitle) {
-            mediaTitle.textContent = data.title || "Tidak ada musik diputar";
-        }
-        if (mediaArtist) {
-            mediaArtist.textContent = data.artist || "STB Media Engine";
-        }
-        if (mediaCard) {
-            if (hasMusic) {
-                mediaCard.classList.add('is-playing');
-                mediaCard.style.opacity = "1";
-            } else {
-                mediaCard.classList.remove('is-playing');
-                mediaCard.style.opacity = "0.7";
-            }
-        }
-    } else if (type === "usage_stat") {
-        const tokEl = document.getElementById('token-count-val');
-        const mdlEl = document.getElementById('active-model-val');
-        const keyEl = document.getElementById('active-key-val');
-        if (tokEl && data.total_tokens !== undefined) tokEl.textContent = data.total_tokens.toLocaleString();
-        if (mdlEl && data.active_model) mdlEl.textContent = data.active_model;
-        if (keyEl && data.key_count) keyEl.textContent = `Keys: ${data.key_count}`;
-    } else if (type === "weather_update") {
-        const tempEl = document.getElementById('weather-temp');
-        const cityEl = document.getElementById('weather-city');
-        if (tempEl) tempEl.textContent = `${data.temp}°C`;
-        if (cityEl) cityEl.textContent = data.city;
+        const hasMusic = data.title && data.title.trim() !== "" && data.title !== "Tidak ada musik diputar";
+        mediaTitle.textContent = hasMusic ? data.title : "Tidak ada musik diputar";
+        mediaCard.hidden = !hasMusic;
     }
 }
 
-// 6. Send Commands to STB
 function sendCommand(text) {
     if (!text || !text.trim()) return;
-    if (ws && ws.readyState === WebSocket.OPEN) {
-        if (userSpeech) {
-            userSpeech.style.display = "flex";
-            userSpeech.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-        }
-        if (userSpeechText) userSpeechText.textContent = text;
-        if (assistantSpeechText) assistantSpeechText.textContent = "Memproses permintaan...";
-        setOrbState("thinking");
-
-        ws.send(JSON.stringify({
-            type: "text_command",
-            text: text
-        }));
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+        showAssistantText("Belum terhubung ke server. Coba lagi sebentar.");
+        return;
     }
+    showUserText(text);
+    showAssistantText("...");
+    setOrbState("thinking");
+    ws.send(JSON.stringify({ type: "text_command", text }));
 }
 
-// 7. Event Listeners
-if (orbWrapper) {
-    orbWrapper.addEventListener('click', toggleBrowserMic);
-}
+micButton.addEventListener('click', toggleMic);
 
-if (btnVoiceInput) {
-    btnVoiceInput.addEventListener('click', toggleBrowserMic);
-}
+textCmdForm.addEventListener('submit', (e) => {
+    e.preventDefault();
+    if (textInput.value.trim()) {
+        sendCommand(textInput.value);
+        textInput.value = "";
+        textInput.blur();
+    }
+});
 
-if (textCmdForm) {
-    textCmdForm.addEventListener('submit', (e) => {
-        e.preventDefault();
-        if (textInput && textInput.value) {
-            sendCommand(textInput.value);
-            textInput.value = "";
-        }
-    });
-}
+btnStopMusic.addEventListener('click', () => {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: "media_control", action: "stop" }));
+    }
+});
 
-if (btnStopMusic) {
-    btnStopMusic.addEventListener('click', () => {
-        if (ws && ws.readyState === WebSocket.OPEN) {
-            ws.send(JSON.stringify({ type: "media_control", action: "stop" }));
-        }
-    });
-}
-
-if (btnQuickMusic) {
-    btnQuickMusic.addEventListener('click', () => {
-        sendCommand("Putar musik santai");
-    });
-}
-
-if (btnQuickLamp) {
-    btnQuickLamp.addEventListener('click', () => {
-        BudiHome.setTab('home');
-    });
-}
-
-if (btnQuickWeather) {
-    btnQuickWeather.addEventListener('click', () => {
-        sendCommand("Bagaimana cuaca hari ini?");
-    });
-}
-
-if (btnQuickNews) {
-    btnQuickNews.addEventListener('click', () => {
-        sendCommand("Ada berita menarik apa hari ini?");
-    });
-}
-
-if (btnFullscreen) {
-    btnFullscreen.addEventListener('click', () => {
-        if (!document.fullscreenElement) {
-            document.documentElement.requestFullscreen().catch(() => {});
-        } else {
-            document.exitFullscreen().catch(() => {});
-        }
-    });
-}
-
-// Inisialisasi
+setOrbState("idle");
 connectWebSocket();
     </script>
 </body>

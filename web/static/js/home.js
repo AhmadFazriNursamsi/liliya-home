@@ -36,6 +36,7 @@ const BudiHome = (() => {
     // ---------- Tabs ----------
     function setTab(tab) {
         if (!['assistant', 'home', 'cctv'].includes(tab)) tab = 'assistant';
+        if (appContainer.dataset.tab !== tab) window.scrollTo(0, 0);
         appContainer.dataset.tab = tab;
         document.querySelectorAll('.tab-btn[data-tab]').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
         try { localStorage.setItem('budi_tab', tab); } catch (e) {}
@@ -85,7 +86,7 @@ const BudiHome = (() => {
                 ${switchable ? '<span class="switch"></span>' : ''}
             </div>
             <div class="dev-bottom">
-                <div><div class="dev-name">${esc(d.name || d.id)}</div><div class="dev-state">${esc(describe(d))}${d.online === false ? ' <span class="dev-badge">Offline</span>' : ''}</div></div>
+                <div><div class="dev-room">${esc(d.room || '')}</div><div class="dev-name">${esc(d.name || d.id)}</div><div class="dev-state">${esc(describe(d))}${d.online === false ? ' <span class="dev-badge">Offline</span>' : ''}</div></div>
                 <button class="dev-edit" data-act="edit" aria-label="Edit ${esc(d.name || d.id)}" title="Edit perangkat"><i class="fa-solid fa-pen"></i></button>
             </div>
             ${extra}
@@ -100,16 +101,9 @@ const BudiHome = (() => {
             if (homeSummary) homeSummary.textContent = 'Belum ada perangkat';
             return;
         }
-        const rooms = new Map();
-        list.forEach(d => {
-            const room = d.room || 'Lainnya';
-            if (!rooms.has(room)) rooms.set(room, []);
-            rooms.get(room).push(d);
-        });
-        homeGrid.innerHTML = [...rooms.entries()].map(([room, devs]) => `
-            <section class="room-group"><h3>${esc(room)}</h3>
-                <div class="device-grid">${devs.map(cardHtml).join('')}</div>
-            </section>`).join('');
+        // Satu grid untuk semua perangkat (diurutkan per ruangan); nama ruangan tampil di kartu
+        const sorted = [...list].sort((a, b) => (a.room || '').localeCompare(b.room || '') || (a.name || '').localeCompare(b.name || ''));
+        homeGrid.innerHTML = `<div class="device-grid">${sorted.map(cardHtml).join('')}</div>`;
 
         const lights = list.filter(d => d.type === 'light');
         const onCount = lights.filter(isOn).length;
@@ -430,7 +424,8 @@ const BudiHome = (() => {
         if (!el) {
             el = document.createElement('div');
             el.id = 'budi-toast';
-            el.style.cssText = 'position:fixed;left:50%;bottom:max(24px,env(safe-area-inset-bottom));transform:translateX(-50%);background:rgba(18,24,38,.95);border:1px solid rgba(255,255,255,.12);color:#f8fafc;padding:10px 16px;border-radius:12px;font-size:.85rem;z-index:99;max-width:90vw;text-align:center';
+            el.className = 'toast';
+            el.setAttribute('role', 'status');
             document.body.appendChild(el);
         }
         el.textContent = msg;

@@ -14,10 +14,14 @@ Everything runs on the box itself; both 24/7 video recorders together use about 
 ![CI](https://img.shields.io/badge/GitHub%20Actions-APK%20%2B%20Docker-2088FF?logo=githubactions&logoColor=white)
 
 <p align="center">
-  <img src="docs/screenshots/assistant.png" width="300" alt="Voice assistant tab">
-  &nbsp;&nbsp;
-  <img src="docs/screenshots/home.png" width="300" alt="Smart home switches tab">
+  <img src="docs/screenshots/assistant.png" width="250" alt="Voice assistant tab">
+  &nbsp;
+  <img src="docs/screenshots/home.png" width="250" alt="Smart home switches tab">
+  &nbsp;
+  <img src="docs/screenshots/cctv.png" width="250" alt="CCTV live view and recordings tab">
 </p>
+
+<p align="center"><em>The Android app is branded <strong>Liliya</strong>.</em></p>
 
 ---
 
@@ -81,7 +85,8 @@ Everything runs on the box itself; both 24/7 video recorders together use about 
   local copies are deleted only after the checksum matches in Drive. Drive copies are never deleted.
 - Backup status and a **"Drive almost full" warning** shown in the app.
 
-### 📱 Android app
+### 📱 Android app — "Liliya"
+- Clean, light UI themed from the family logo (cream, peach and brown), bottom navigation, no framework.
 - Minimal Java app (Android 8+) wrapping the dashboard in a WebView, plus:
   - **native Android speech recognition** bridged to JavaScript (WebView has no Web Speech API),
   - fullscreen video with landscape rotation, authenticated downloads via `DownloadManager`,
