@@ -1,0 +1,8 @@
+[Unit]
+Description=BUDI CCTV Recording Cleanup
+
+[Service]
+Type=oneshot
+User=fazri
+EnvironmentFile=/etc/budi-cctv/record.env
+ExecStart=/usr/local/bin/cctv-cleanup

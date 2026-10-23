@@ -2,12 +2,18 @@
 <html lang="id">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="theme-color" content="#090d16">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="BUDI Assistant">
     <title>STB Smart Voice Assistant & Smart Display</title>
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
-    <link rel="stylesheet" href="/static/css/style.css?v=20260822_final">
+    <link rel="stylesheet" href="/static/css/style.css?v=20260830_clean_v1">
+    <link rel="stylesheet" href="/static/css/home.css?v=20261024_v2">
     <!-- Google Fonts & FontAwesome -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -17,18 +23,20 @@
 <body class="theme-dark">
     <div class="ambient-background"></div>
 
-    <div class="app-container">
+    <div class="app-container" data-tab="assistant">
         <!-- Top Status Bar -->
         <header class="top-bar">
-            <div class="clock-widget">
-                <div id="clock-time" class="time-display">12:00</div>
-                <div id="clock-date" class="date-display">Jumat, 21 Agustus 2026</div>
-            </div>
+            <div class="top-bar-main">
+                <div class="clock-widget">
+                    <div id="clock-time" class="time-display">12:00</div>
+                    <div id="clock-date" class="date-display">Jumat, 21 Agustus 2026</div>
+                </div>
 
-            <div class="header-center">
-                <div class="assistant-badge">
-                    <span class="pulse-dot"></span>
-                    <span id="assistant-status-text">Standby</span>
+                <div class="header-center">
+                    <div class="assistant-badge">
+                        <span class="pulse-dot"></span>
+                        <span id="assistant-status-text">Standby</span>
+                    </div>
                 </div>
             </div>
 
@@ -62,11 +70,20 @@
             </div>
         </header>
 
+        <!-- Tab Navigasi: Asisten / Rumah / CCTV -->
+        <nav class="tab-bar" aria-label="Navigasi">
+            <button class="tab-btn" data-tab="assistant"><i class="fa-solid fa-wand-magic-sparkles"></i> <span>Asisten</span></button>
+            <button class="tab-btn" data-tab="home"><i class="fa-solid fa-house-signal"></i> <span>Rumah</span></button>
+            <button class="tab-btn" data-tab="cctv"><i class="fa-solid fa-video"></i> <span>CCTV</span></button>
+            <button class="tab-btn icon-only" id="btn-app-settings" title="Pengaturan Aplikasi" hidden><i class="fa-solid fa-gear"></i></button>
+            <a class="tab-btn icon-only" href="/logout" title="Keluar"><i class="fa-solid fa-right-from-bracket"></i></a>
+        </nav>
+
         <!-- Main Display / Assistant Visualizer Area -->
         <main class="main-display">
             <!-- Glowing Visualizer Orb -->
             <div class="visualizer-container">
-                <div class="orb-wrapper" id="orb-wrapper">
+                <div class="orb-wrapper" id="orb-wrapper" title="Klik untuk berbicara dengan Budi">
                     <div class="glow-ring ring-1"></div>
                     <div class="glow-ring ring-2"></div>
                     <div class="glow-ring ring-3"></div>
@@ -85,46 +102,6 @@
                     <span class="bar"></span>
                     <span class="bar"></span>
                     <span class="bar"></span>
-                </div>
-            </div>
-
-            <!-- 💡 SAKLAR & SENSOR SMART HOME LANGSUNG DI BAWAH LOGO MIC -->
-            <div class="mic-smart-controls" id="mic-smart-controls">
-                <div class="quick-switches-title">
-                    <i class="fa-solid fa-house-laptop"></i> Kontrol Cepat & Status Sensor
-                </div>
-                <div class="switches-row" id="switches-row">
-                    <!-- Dynamic Switch & Sensor Buttons rendered directly below mic -->
-                    <div class="switch-chip" id="chip-lampu_ruang_tamu" onclick="toggleDevice('lampu_ruang_tamu')">
-                        <i class="fa-solid fa-lightbulb"></i>
-                        <span class="chip-label">Lampu Tamu</span>
-                        <span class="chip-status">OFF</span>
-                    </div>
-                    <div class="switch-chip" id="chip-lampu_kamar" onclick="toggleDevice('lampu_kamar')">
-                        <i class="fa-solid fa-lightbulb"></i>
-                        <span class="chip-label">Lampu Kamar</span>
-                        <span class="chip-status">OFF</span>
-                    </div>
-                    <div class="switch-chip" id="chip-lampu_teras" onclick="toggleDevice('lampu_teras')">
-                        <i class="fa-solid fa-lightbulb"></i>
-                        <span class="chip-label">Lampu Teras</span>
-                        <span class="chip-status">OFF</span>
-                    </div>
-                    <div class="switch-chip" id="chip-ac_kamar" onclick="toggleDevice('ac_kamar')">
-                        <i class="fa-solid fa-snowflake"></i>
-                        <span class="chip-label">AC Kamar</span>
-                        <span class="chip-status">OFF</span>
-                    </div>
-                    <div class="switch-chip sensor-chip" id="chip-sensor_suhu_ruang">
-                        <i class="fa-solid fa-temperature-half"></i>
-                        <span class="chip-label">Suhu</span>
-                        <span class="chip-status" id="chip-suhu-val">27°C</span>
-                    </div>
-                    <div class="switch-chip sensor-chip" id="chip-sensor_pintu_utama">
-                        <i class="fa-solid fa-door-closed"></i>
-                        <span class="chip-label">Pintu</span>
-                        <span class="chip-status" id="chip-pintu-val">Aman</span>
-                    </div>
                 </div>
             </div>
 
@@ -152,15 +129,68 @@
                         <div class="speaker-tag assistant-tag">
                             <span class="tag-dot"></span> 🤖 BUDI
                         </div>
-                        <p id="assistant-speech-text">Katakan "Budi, nyalakan lampu ruang tamu" atau klik saklar di atas...</p>
+                        <p id="assistant-speech-text">Halo! Saya Budi, asisten pintar Anda. Klik tombol 'Bicara' di bawah atau ketuk logo mic untuk memberi perintah suara.</p>
                     </div>
                 </div>
             </div>
         </main>
 
+        <!-- Panel Saklar Smart Home Manual -->
+        <section class="tab-panel" id="panel-home">
+            <div class="panel-head">
+                <div>
+                    <h2>Saklar Rumah</h2>
+                    <div class="sub" id="home-summary">Memuat perangkat...</div>
+                </div>
+                <div class="pill-row">
+                    <button class="pill-btn on" id="btn-all-on"><i class="fa-solid fa-lightbulb"></i> Semua Nyala</button>
+                    <button class="pill-btn" id="btn-all-off"><i class="fa-regular fa-lightbulb"></i> Semua Mati</button>
+                </div>
+            </div>
+            <div id="home-rooms" class="segment-hours"></div>
+        </section>
+
+        <!-- Panel CCTV: Live View, Pan-Tilt & Riwayat Rekaman -->
+        <section class="tab-panel" id="panel-cctv">
+            <div class="panel-head">
+                <div>
+                    <h2 id="cctv-title">CCTV</h2>
+                    <div class="sub">Live & rekaman tersimpan di SSD STB</div>
+                </div>
+                <div class="pill-row" id="cctv-cameras"></div>
+            </div>
+            <div class="cctv-body">
+                <div class="cctv-stage" id="cctv-stage">
+                    <span class="cctv-badge" id="cctv-badge"><span class="dot"></span>LIVE</span>
+                    <div class="ptz-pad" id="ptz-pad" hidden>
+                        <button class="up" data-dir="up" aria-label="Atas"><i class="fa-solid fa-chevron-up"></i></button>
+                        <button class="left" data-dir="left" aria-label="Kiri"><i class="fa-solid fa-chevron-left"></i></button>
+                        <button class="right" data-dir="right" aria-label="Kanan"><i class="fa-solid fa-chevron-right"></i></button>
+                        <button class="down" data-dir="down" aria-label="Bawah"><i class="fa-solid fa-chevron-down"></i></button>
+                    </div>
+                </div>
+                <div class="cctv-toolbar" style="margin-top:10px">
+                    <div class="pill-row">
+                        <button class="pill-btn active" id="btn-cctv-live"><i class="fa-solid fa-tower-broadcast"></i> Live</button>
+                        <button class="pill-btn" id="btn-cctv-quality"><i class="fa-solid fa-gauge-simple"></i> Hemat</button>
+                    </div>
+                    <div class="pill-row">
+                        <button class="pill-btn" id="btn-cctv-refresh" title="Muat ulang rekaman"><i class="fa-solid fa-rotate"></i></button>
+                        <button class="pill-btn" id="btn-cctv-full" title="Layar penuh"><i class="fa-solid fa-expand"></i></button>
+                    </div>
+                </div>
+                <div class="playback-meta" id="cctv-playback-meta" style="margin-top:10px" hidden></div>
+                <div class="panel-head" style="margin-top:16px">
+                    <h2 style="font-size:1rem">Riwayat Rekaman</h2>
+                </div>
+                <div class="pill-row" id="cctv-dates" style="margin:8px 0 12px"></div>
+                <div class="segment-hours" id="cctv-segments"></div>
+            </div>
+        </section>
+
         <!-- Bottom Music & Control Dock -->
         <footer class="bottom-dock">
-            <!-- Now Playing Card -->
+            <!-- Now Playing Card (Shows automatically when music is playing) -->
             <div class="media-card" id="media-card">
                 <div class="media-art" id="media-art">
                     <i class="fa-solid fa-music"></i>
@@ -179,9 +209,9 @@
             <!-- Interactive Web Input & Quick Actions -->
             <div class="dock-actions">
                 <form class="text-cmd-form" id="text-cmd-form">
-                    <input type="text" id="text-input" placeholder="Ketik atau klik tombol Mic untuk bicara... (contoh: nyalakan lampu kamar)" autocomplete="off">
-                    <button type="button" class="action-btn" id="btn-voice-input" title="Klik untuk berbicara via Mic HP/Laptop" style="background: linear-gradient(135deg, #00f2fe, #4facfe); color: #000; font-weight: bold; border-radius: 12px; margin-right: 6px; padding: 0 16px;">
-                        <i class="fa-solid fa-microphone"></i> Bicara
+                    <input type="text" id="text-input" placeholder="Ketik atau klik Bicara..." autocomplete="off">
+                    <button type="button" class="action-btn" id="btn-voice-input" title="Klik untuk berbicara via Mic HP/Laptop">
+                        <i class="fa-solid fa-microphone"></i> <span>Bicara</span>
                     </button>
                     <button type="submit" class="send-btn" id="send-btn" title="Kirim Perintah Teks">
                         <i class="fa-solid fa-paper-plane"></i>
@@ -189,13 +219,16 @@
                 </form>
 
                 <div class="quick-buttons">
-                    <button class="action-btn" id="btn-quick-lights" title="Nyalakan/Matikan Semua Lampu">
-                        <i class="fa-solid fa-lightbulb"></i> Lampu
+                    <button class="action-btn" id="btn-quick-music" title="Putar Musik Santai">
+                        <i class="fa-solid fa-music"></i> <span>Musik</span>
                     </button>
-                    <button class="action-btn" id="btn-quick-sensors" title="Cek Status Sensor">
-                        <i class="fa-solid fa-gauge-high"></i> Sensor
+                    <button class="action-btn" id="btn-quick-lamp" title="Kontrol Lampu Smart Home">
+                        <i class="fa-solid fa-lightbulb"></i> <span>Lampu</span>
                     </button>
-                    <button class="action-btn" id="btn-fullscreen" title="Full Screen TV Mode">
+                    <button class="action-btn" id="btn-quick-weather" title="Cek Cuaca Hari Ini">
+                        <i class="fa-solid fa-cloud-sun"></i> <span>Cuaca</span>
+                    </button>
+                    <button class="action-btn" id="btn-fullscreen" title="Full Screen Mode">
                         <i class="fa-solid fa-expand"></i>
                     </button>
                 </div>
@@ -203,17 +236,15 @@
         </footer>
     </div>
 
+    <script src="/static/js/home.js?v=20261024_v2"></script>
     <script>
 // =========================================================
-// STB Smart Voice Assistant & Smart Display
-// Universal HTML5 MediaRecorder Audio Stream (Mac/iOS/Android/Windows)
+// STB Smart Voice Assistant & Smart Display (BUDI)
+// Universal HTML5 SpeechRecognition & WebUI Controller
 // =========================================================
 
 let ws = null;
 let reconnectTimer = null;
-let smartHomeDevices = {};
-let mediaRecorder = null;
-let audioChunks = [];
 let isRecording = false;
 
 // DOM Elements
@@ -234,8 +265,10 @@ const textCmdForm = document.getElementById('text-cmd-form');
 const textInput = document.getElementById('text-input');
 const btnVoiceInput = document.getElementById('btn-voice-input');
 const btnFullscreen = document.getElementById('btn-fullscreen');
-const btnQuickLights = document.getElementById('btn-quick-lights');
-const btnQuickSensors = document.getElementById('btn-quick-sensors');
+const btnQuickMusic = document.getElementById('btn-quick-music');
+const btnQuickLamp = document.getElementById('btn-quick-lamp');
+const btnQuickWeather = document.getElementById('btn-quick-weather');
+const btnQuickNews = document.getElementById('btn-quick-news');
 
 // 1. Clock & Date Display
 const DAYS_ID = ["Minggu", "Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu"];
@@ -265,9 +298,9 @@ function setOrbState(state) {
     document.body.className = `theme-dark state-${state}`;
     if (statusText) {
         const labels = {
-            "idle": "Standby (Klik 'Bicara' untuk memberi perintah)",
-            "listening": "🔴 Sedang Merekam Suara Anda...",
-            "thinking": "Sedang Berpikir & Memproses...",
+            "idle": "Standby",
+            "listening": "🔴 Merekam...",
+            "thinking": "Memproses...",
             "speaking": "Membacakan Respon..."
         };
         statusText.textContent = labels[state] || state;
@@ -292,11 +325,14 @@ function initSpeechEngine() {
             finalRecordedText = "";
             setOrbState("listening");
             if (btnVoiceInput) {
-                btnVoiceInput.innerHTML = '<i class="fa-solid fa-microphone-lines fa-fade"></i> Mendengarkan...';
+                btnVoiceInput.innerHTML = '<i class="fa-solid fa-microphone-lines fa-fade"></i> <span>Merekam...</span>';
                 btnVoiceInput.style.background = 'linear-gradient(135deg, #ff0844, #ffb199)';
                 btnVoiceInput.style.color = '#fff';
             }
-            if (userSpeech) userSpeech.style.display = "flex";
+            if (userSpeech) {
+                userSpeech.style.display = "flex";
+                userSpeech.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }
             if (userSpeechText) userSpeechText.textContent = "Mendengarkan ucapan Anda...";
         };
 
@@ -335,15 +371,63 @@ initSpeechEngine();
 
 function resetVoiceButton() {
     if (btnVoiceInput) {
-        btnVoiceInput.innerHTML = '<i class="fa-solid fa-microphone"></i> Bicara';
+        btnVoiceInput.innerHTML = '<i class="fa-solid fa-microphone"></i> <span>Bicara</span>';
         btnVoiceInput.style.background = 'linear-gradient(135deg, #00f2fe, #4facfe)';
         btnVoiceInput.style.color = '#000';
     }
 }
 
+// Aplikasi Android (APK BUDI): pakai pengenal suara native Android karena WebView tidak mendukung Web Speech API
+const nativeApp = window.BudiAndroid || null;
+window.budiNativeSpeech = {
+    start() {
+        isRecording = true;
+        finalRecordedText = "";
+        setOrbState("listening");
+        if (btnVoiceInput) {
+            btnVoiceInput.innerHTML = '<i class="fa-solid fa-microphone-lines fa-fade"></i> <span>Merekam...</span>';
+            btnVoiceInput.style.background = 'linear-gradient(135deg, #ff0844, #ffb199)';
+            btnVoiceInput.style.color = '#fff';
+        }
+        if (userSpeech) userSpeech.style.display = "flex";
+        if (userSpeechText) userSpeechText.textContent = "Mendengarkan ucapan Anda...";
+    },
+    partial(text) {
+        if (text && userSpeechText) userSpeechText.textContent = text;
+    },
+    result(text) {
+        isRecording = false;
+        resetVoiceButton();
+        if (text && text.trim()) sendCommand(text.trim());
+        else setOrbState("idle");
+    },
+    error(message) {
+        isRecording = false;
+        resetVoiceButton();
+        setOrbState("idle");
+        if (userSpeechText) userSpeechText.textContent = message || "Suara tidak terdengar, coba lagi.";
+    }
+};
+
+if (nativeApp) {
+    const btnAppSettings = document.getElementById('btn-app-settings');
+    if (btnAppSettings) {
+        btnAppSettings.hidden = false;
+        btnAppSettings.addEventListener('click', () => nativeApp.openSettings());
+    }
+}
+
 function toggleBrowserMic() {
+    if (nativeApp) {
+        if (isRecording) nativeApp.stopSpeech(); else nativeApp.startSpeech();
+        return;
+    }
     if (!recognition) {
         initSpeechEngine();
+    }
+    if (!recognition) {
+        if (assistantSpeechText) assistantSpeechText.textContent = "Browser ini tidak mendukung input suara. Silakan ketik perintah Anda.";
+        return;
     }
     if (isRecording) {
         try { recognition.stop(); } catch (e) {}
@@ -354,10 +438,11 @@ function toggleBrowserMic() {
             recognition.start();
         } catch (e) {
             console.warn("Recognition start error:", e);
-            // Jika instance sudah berjalan, restart
             try {
                 recognition.abort();
-                setTimeout(() => recognition.start(), 100);
+                setTimeout(() => {
+                    try { recognition.start(); } catch (err) {}
+                }, 100);
             } catch (err) {}
         }
     }
@@ -372,7 +457,7 @@ function connectWebSocket() {
     ws = new WebSocket(wsUrl);
 
     ws.onopen = () => {
-        console.log("[WS] ✅ Terhubung ke STB Assistant & Smart Home Realtime DB.");
+        console.log("[WS] ✅ Terhubung ke STB Assistant Server.");
         if (reconnectTimer) {
             clearInterval(reconnectTimer);
             reconnectTimer = null;
@@ -397,102 +482,50 @@ function connectWebSocket() {
     };
 }
 
-// 5. Smart Home Chip Controller
-function toggleDevice(deviceId) {
-    if (ws && ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({
-            type: "smart_home_toggle",
-            id: deviceId
-        }));
-    }
-}
-
-function updateDeviceChip(device) {
-    const chip = document.getElementById(`chip-${device.id}`);
-    if (!chip) return;
-
-    const isActive = device.state === "on";
-    const statusSpan = chip.querySelector('.chip-status');
-
-    if (device.type === "light") {
-        if (isActive) {
-            chip.classList.add('active');
-            if (statusSpan) statusSpan.textContent = "ON";
-        } else {
-            chip.classList.remove('active');
-            if (statusSpan) statusSpan.textContent = "OFF";
-        }
-    } else if (device.type === "ac") {
-        if (isActive) {
-            chip.classList.add('ac-active');
-            if (statusSpan) statusSpan.textContent = `${device.temperature || 24}°C`;
-        } else {
-            chip.classList.remove('ac-active');
-            if (statusSpan) statusSpan.textContent = "OFF";
-        }
-    } else if (device.type === "sensor_climate") {
-        const suhuVal = document.getElementById('chip-suhu-val');
-        if (suhuVal) suhuVal.textContent = `${device.temperature}°C`;
-    } else if (device.type === "sensor_contact") {
-        const pintuVal = document.getElementById('chip-pintu-val');
-        if (pintuVal) {
-            pintuVal.textContent = device.is_open ? "Terbuka" : "Aman";
-            if (device.is_open) {
-                pintuVal.classList.add('sensor-alert');
-            } else {
-                pintuVal.classList.remove('sensor-alert');
-            }
-        }
-    }
-}
-
-function syncAllDevices(devicesList) {
-    if (!Array.isArray(devicesList)) return;
-    devicesList.forEach(dev => {
-        smartHomeDevices[dev.id] = dev;
-        updateDeviceChip(dev);
-    });
-}
-
-// 6. Handle Incoming Events from STB
+// 5. Handle Incoming Events from STB
 function handleServerEvent(data) {
     const type = data.type;
+    if (typeof BudiHome !== 'undefined') BudiHome.onEvent(data);
 
     if (type === "state_change") {
         setOrbState(data.state);
         if (data.state === "listening") {
-            if (userSpeech) userSpeech.style.display = "flex";
+            if (userSpeech) {
+                userSpeech.style.display = "flex";
+                userSpeech.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }
             if (userSpeechText) userSpeechText.textContent = "Sedang mendengarkan ucapan Anda...";
         }
     } else if (type === "user_voice_command") {
-        if (userSpeech) userSpeech.style.display = "flex";
+        if (userSpeech) {
+            userSpeech.style.display = "flex";
+            userSpeech.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
         if (userSpeechText) userSpeechText.textContent = data.text;
     } else if (type === "assistant_response") {
-        if (assistantSpeech) assistantSpeech.style.display = "flex";
+        if (assistantSpeech) {
+            assistantSpeech.style.display = "flex";
+            assistantSpeech.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
         if (assistantSpeechText) assistantSpeechText.textContent = data.text;
     } else if (type === "open_url") {
         if (data.url) {
             console.log(`[Redirect] 🚀 Membuka URL di browser: ${data.url}`);
             try {
-                window.open(data.url, '_blank');
+                if (nativeApp) nativeApp.openExternal(data.url); else window.open(data.url, '_blank');
             } catch (e) {
                 console.warn("[Redirect Error]", e);
             }
-            if (assistantSpeech) assistantSpeech.style.display = "flex";
+            if (assistantSpeech) {
+                assistantSpeech.style.display = "flex";
+                assistantSpeech.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }
             if (assistantSpeechText) {
-                assistantSpeechText.innerHTML = `${assistantSpeechText.textContent || 'Membuka YouTube...'} <br><a href="${data.url}" target="_blank" style="display:inline-block;margin-top:10px;padding:8px 18px;background:linear-gradient(135deg, #ff0000, #cc0000);color:#fff;border-radius:20px;text-decoration:none;font-weight:bold;font-size:0.9rem;box-shadow:0 4px 15px rgba(255,0,0,0.4);"><i class="fa-brands fa-youtube" style="margin-right:6px;"></i> Buka di YouTube</a>`;
+                assistantSpeechText.innerHTML = `${assistantSpeechText.textContent || 'Membuka YouTube...'} <br><a href="${data.url}" target="_blank" class="yt-mobile-btn"><i class="fa-brands fa-youtube"></i> Buka di YouTube</a>`;
             }
         }
-    } else if (type === "smart_home_sync") {
-        if (data.devices) {
-            syncAllDevices(data.devices);
-        }
-    } else if (type === "smart_home_device_update") {
-        if (data.device) {
-            smartHomeDevices[data.device.id] = data.device;
-            updateDeviceChip(data.device);
-        }
     } else if (type === "now_playing") {
+        const hasMusic = data.title && data.title !== "Tidak ada musik diputar" && data.title.trim() !== "";
         if (mediaTitle) {
             mediaTitle.textContent = data.title || "Tidak ada musik diputar";
         }
@@ -500,7 +533,13 @@ function handleServerEvent(data) {
             mediaArtist.textContent = data.artist || "STB Media Engine";
         }
         if (mediaCard) {
-            mediaCard.style.opacity = data.title ? "1" : "0.7";
+            if (hasMusic) {
+                mediaCard.classList.add('is-playing');
+                mediaCard.style.opacity = "1";
+            } else {
+                mediaCard.classList.remove('is-playing');
+                mediaCard.style.opacity = "0.7";
+            }
         }
     } else if (type === "usage_stat") {
         const tokEl = document.getElementById('token-count-val');
@@ -517,11 +556,14 @@ function handleServerEvent(data) {
     }
 }
 
-// 7. Send Commands to STB
+// 6. Send Commands to STB
 function sendCommand(text) {
     if (!text || !text.trim()) return;
     if (ws && ws.readyState === WebSocket.OPEN) {
-        if (userSpeech) userSpeech.style.display = "flex";
+        if (userSpeech) {
+            userSpeech.style.display = "flex";
+            userSpeech.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
         if (userSpeechText) userSpeechText.textContent = text;
         if (assistantSpeechText) assistantSpeechText.textContent = "Memproses permintaan...";
         setOrbState("thinking");
@@ -533,10 +575,8 @@ function sendCommand(text) {
     }
 }
 
-// 8. Event Listeners
+// 7. Event Listeners
 if (orbWrapper) {
-    orbWrapper.style.cursor = "pointer";
-    orbWrapper.title = "Klik untuk berbicara via Mic Mac / HP";
     orbWrapper.addEventListener('click', toggleBrowserMic);
 }
 
@@ -562,15 +602,27 @@ if (btnStopMusic) {
     });
 }
 
-if (btnQuickLights) {
-    btnQuickLights.addEventListener('click', () => {
-        sendCommand("Nyalakan semua lampu");
+if (btnQuickMusic) {
+    btnQuickMusic.addEventListener('click', () => {
+        sendCommand("Putar musik santai");
     });
 }
 
-if (btnQuickSensors) {
-    btnQuickSensors.addEventListener('click', () => {
-        sendCommand("Cek status semua sensor");
+if (btnQuickLamp) {
+    btnQuickLamp.addEventListener('click', () => {
+        BudiHome.setTab('home');
+    });
+}
+
+if (btnQuickWeather) {
+    btnQuickWeather.addEventListener('click', () => {
+        sendCommand("Bagaimana cuaca hari ini?");
+    });
+}
+
+if (btnQuickNews) {
+    btnQuickNews.addEventListener('click', () => {
+        sendCommand("Ada berita menarik apa hari ini?");
     });
 }
 

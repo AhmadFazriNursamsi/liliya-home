@@ -1,0 +1,42 @@
+plugins {
+    id 'com.android.application'
+}
+
+def runNumber = (System.getenv('GITHUB_RUN_NUMBER') ?: '1').toInteger()
+def keystorePath = System.getenv('BUDI_KEYSTORE_PATH')
+
+android {
+    namespace 'id.laravelia.budi'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId 'id.laravelia.budi'
+        minSdk 26
+        targetSdk 34
+        versionCode runNumber
+        versionName "1.0.${runNumber}"
+    }
+
+    signingConfigs {
+        release {
+            if (keystorePath) {
+                storeFile file(keystorePath)
+                storePassword System.getenv('BUDI_KEYSTORE_PASSWORD')
+                keyAlias System.getenv('BUDI_KEY_ALIAS')
+                keyPassword System.getenv('BUDI_KEY_PASSWORD')
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig keystorePath ? signingConfigs.release : signingConfigs.debug
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}

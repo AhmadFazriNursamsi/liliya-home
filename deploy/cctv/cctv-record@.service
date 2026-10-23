@@ -1,0 +1,16 @@
+[Unit]
+Description=BUDI CCTV Recorder (%i)
+After=go2rtc.service
+Wants=go2rtc.service
+
+[Service]
+User=fazri
+EnvironmentFile=/etc/budi-cctv/record.env
+ExecStart=/usr/local/bin/cctv-record %i
+Restart=always
+RestartSec=10
+Nice=5
+MemoryMax=120M
+
+[Install]
+WantedBy=multi-user.target

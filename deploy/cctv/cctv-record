@@ -1,0 +1,11 @@
+#!/bin/sh
+# Rekam stream go2rtc ke file MP4 per segmen (tanpa transcode video).
+CAM="$1"
+DIR="${CCTV_DIR:-/srv/cctv}/$CAM"
+mkdir -p "$DIR"
+exec ffmpeg -nostdin -hide_banner -loglevel warning \
+  -rtsp_transport tcp -timeout 15000000 -i "rtsp://127.0.0.1:8554/$CAM" \
+  -map 0:v:0 -map 0:a:0? -c:v copy -c:a aac -b:a 32k \
+  -f segment -segment_time "${CCTV_SEGMENT:-600}" -segment_atclocktime 1 -reset_timestamps 1 \
+  -strftime 1 -segment_format mp4 -segment_format_options movflags=+faststart \
+  "$DIR/%Y%m%d_%H%M%S.mp4"

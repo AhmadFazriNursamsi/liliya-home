@@ -4,6 +4,9 @@ import os
 import threading
 from aiohttp import web
 
+from core.web_auth import WebAuth
+from core.cctv import CCTVManager
+
 class WebServer:
     def __init__(self, config, event_bridge=None, smart_home_db=None, host="0.0.0.0", port=8080):
         self.config = config
@@ -11,20 +14,27 @@ class WebServer:
         self.port = port
         self.event_bridge = event_bridge
         self.smart_home_db = smart_home_db
-        self.app = web.Application()
         self.websockets = set()
         self.loop = None
         self.thread = None
         
         self.base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         self.web_dir = os.path.join(self.base_dir, "web")
-        
+
+        self.auth = WebAuth(config, self.base_dir)
+        self.cctv = CCTVManager(config)
+        self.app = web.Application(middlewares=[self.auth.middleware])
         self._setup_routes()
 
     def set_smart_home_db(self, smart_home_db):
         self.smart_home_db = smart_home_db
 
     def _setup_routes(self):
+        # Login Routes
+        self.app.router.add_get('/login', self.auth.handle_login_page)
+        self.app.router.add_post('/login', self.auth.handle_login_submit)
+        self.app.router.add_get('/logout', self.auth.handle_logout)
+
         # Frontend Routes
         self.app.router.add_get('/', self.handle_index)
         self.app.router.add_get('/ws', self.handle_ws)
@@ -35,10 +45,13 @@ class WebServer:
         self.app.router.add_get('/api/device/{device_id}', self.handle_api_get_device)
         self.app.router.add_post('/api/device/{device_id}', self.handle_api_update_device)
 
+        # CCTV Routes (rekaman, live view via go2rtc, pan-tilt)
+        self.cctv.register_routes(self.app)
+
     async def handle_index(self, request):
         index_file = os.path.join(self.web_dir, 'index.html')
         if os.path.exists(index_file):
-            return web.FileResponse(index_file)
+            return web.FileResponse(index_file, headers={"Cache-Control": "no-store"})
         return web.Response(text="Web UI index.html not found", status=404)
 
     async def handle_api_get_devices(self, request):

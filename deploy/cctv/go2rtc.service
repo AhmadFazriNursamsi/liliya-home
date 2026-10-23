@@ -1,0 +1,14 @@
+[Unit]
+Description=go2rtc Camera Streaming (BUDI CCTV)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=fazri
+ExecStart=/usr/local/bin/go2rtc -config /etc/budi-cctv/go2rtc.yaml
+Restart=always
+RestartSec=5
+MemoryMax=150M
+
+[Install]
+WantedBy=multi-user.target

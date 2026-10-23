@@ -1,0 +1,12 @@
+#!/bin/sh
+# Hapus rekaman lebih tua dari CCTV_RETENTION_DAYS, dan rekaman tertua bila sisa disk < CCTV_MIN_FREE_GB.
+DIR="${CCTV_DIR:-/srv/cctv}"
+DAYS="${CCTV_RETENTION_DAYS:-5}"
+MIN_FREE="${CCTV_MIN_FREE_GB:-20}"
+[ -d "$DIR" ] || exit 0
+find "$DIR" -type f -name '*.mp4' -mmin +$((DAYS * 1440)) -delete
+while [ "$(df --output=avail -BG "$DIR" | tail -1 | tr -dc 0-9)" -lt "$MIN_FREE" ]; do
+  oldest=$(find "$DIR" -type f -name '*.mp4' -printf '%T@ %p\n' | sort -n | head -1 | cut -d' ' -f2-)
+  [ -n "$oldest" ] || break
+  rm -f "$oldest"
+done
