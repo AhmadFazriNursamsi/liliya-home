@@ -227,13 +227,16 @@ class CCTVManager:
         try:
             async with session.ws_connect(f"{self.go2rtc_url}/api/ws", params={"src": src}, max_msg_size=0) as upstream:
                 async def pipe(source, target):
-                    async for msg in source:
-                        if msg.type == aiohttp.WSMsgType.TEXT:
-                            await target.send_str(msg.data)
-                        elif msg.type == aiohttp.WSMsgType.BINARY:
-                            await target.send_bytes(msg.data)
-                        else:
-                            break
+                    try:
+                        async for msg in source:
+                            if msg.type == aiohttp.WSMsgType.TEXT:
+                                await target.send_str(msg.data)
+                            elif msg.type == aiohttp.WSMsgType.BINARY:
+                                await target.send_bytes(msg.data)
+                            else:
+                                break
+                    except (aiohttp.ClientError, ConnectionResetError):
+                        pass  # penonton menutup live view saat data masih dikirim
 
                 tasks = [asyncio.ensure_future(pipe(client, upstream)), asyncio.ensure_future(pipe(upstream, client))]
                 done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)

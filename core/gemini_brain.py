@@ -1,14 +1,15 @@
 import os
 import re
+from typing import Optional
 from google import genai
 from google.genai import types
 
 STABLE_MODELS = [
-    "gemini-2.5-flash",
-    "gemini-2.0-flash",
-    "gemini-1.5-flash",
-    "gemini-2.5-flash-lite",
-    "gemini-3.1-flash-lite"
+    "gemini-3.1-flash-lite",
+    "gemini-3.5-flash",
+    "gemini-3.6-flash",
+    "gemini-3.7-flash",
+    "gemini-2.5-flash"
 ]
 
 class GeminiBrain:
@@ -20,6 +21,10 @@ class GeminiBrain:
         self.fallback_models = self.gemini_config.get("fallback_models", STABLE_MODELS)
         self.system_prompt = self.gemini_config.get("system_prompt", "Kamu adalah asisten suara pintar bernama Budi.")
         self.web_server = web_server
+        # "Thinking" model Gemini membuat jawaban 15-20 detik; untuk perintah rumah cukup 0 (±1 detik).
+        # Isi angka di config (gemini.thinking_budget) bila butuh penalaran lebih, atau null untuk default model.
+        self.thinking_budget = self.gemini_config.get("thinking_budget", 0)
+        self._no_thinking_config = set()  # model yang menolak pengaturan thinking
         
         # Usage metrics tracker
         self.total_tokens_used = 0
@@ -33,6 +38,7 @@ class GeminiBrain:
         self.timer = skills.get("timer")
         self.system_ctrl = skills.get("system")
         self.smart_home = skills.get("smart_home")
+        self.prayer_times = skills.get("prayer_times")
         
         # Validasi API Keys
         self.valid_keys = [k for k in self.api_keys if k and "MASUKKAN_GEMINI" not in k]
@@ -125,17 +131,26 @@ class GeminiBrain:
                 self.system_ctrl.set_volume,
                 self.system_ctrl.get_system_status
             ])
+        if self.prayer_times:
+            tools.extend([
+                self.prayer_times.get_prayer_times,
+                self.prayer_times.get_next_prayer
+            ])
         return tools
 
     def _create_chat_session(self, model_name: str):
         tools = self._build_tools()
+        extra = {}
+        if self.thinking_budget is not None and model_name not in self._no_thinking_config:
+            extra["thinking_config"] = types.ThinkingConfig(thinking_budget=int(self.thinking_budget))
         return self.client.chats.create(
             model=model_name,
             config=types.GenerateContentConfig(
                 system_instruction=self.system_prompt,
                 tools=tools,
                 temperature=0.3,
-                max_output_tokens=250
+                max_output_tokens=250,
+                **extra
             )
         )
 
@@ -169,7 +184,43 @@ class GeminiBrain:
         text = text.replace('**', '').replace('*', '').replace('`', '').strip()
         return text
 
+    def _try_fast_intent(self, text: str) -> Optional[str]:
+        if not text:
+            return None
+        t = text.lower().strip()
+        t_clean = re.sub(r'^(halo budi|hey budi|hai budi|budi)[,\s]+', '', t).strip()
+        
+        # 1. Hentikan musik / radio / audio
+        if t_clean in ["stop", "stop musik", "berhenti", "matikan musik", "hentikan musik", "stop lagu", "matikan lagu", "hentikan lagu", "diam", "matikan radio", "stop radio"]:
+            if self.media_player:
+                return self.media_player.stop_music()
+
+        # 2. Perintah mematikan lampu / smart home (contoh: "matikan lampu", "matikan semua lampu", "padamkan lampu ruang tamu")
+        m_turn_off = re.match(r'^(matikan|padamkan|tutup|off)\s+(lampu\s+[\w\s]+|semua\s+lampu|lampu|lampunya|ac|ac\s+kamar|kipas|kipas\s+angin|semua\s+perangkat)$', t_clean)
+        if m_turn_off and self.smart_home:
+            dev_target = m_turn_off.group(2).strip()
+            return self.smart_home.control_smart_home_device(dev_target, "turn_off")
+            
+        # 3. Perintah menyalakan lampu / smart home (contoh: "nyalakan lampu", "hidupkan lampu ruang tamu")
+        m_turn_on = re.match(r'^(nyalakan|hidupkan|buka|on)\s+(lampu\s+[\w\s]+|semua\s+lampu|lampu|lampunya|ac|ac\s+kamar|kipas|kipas\s+angin|semua\s+perangkat)$', t_clean)
+        if m_turn_on and self.smart_home:
+            dev_target = m_turn_on.group(2).strip()
+            return self.smart_home.control_smart_home_device(dev_target, "turn_on")
+
+        # 4. Permintaan memutar adzan manual (dibatasi hanya saat waktu sholat tiba secara otomatis)
+        if any(w in t_clean for w in ["putar adzan", "bunyikan adzan", "kumandangkan adzan", "mainkan adzan", "nyalakan adzan", "setel adzan", "adzan"]):
+            if "jadwal" not in t_clean and "waktu" not in t_clean:
+                return "Adzan akan berkumandang secara otomatis tepat saat waktu sholat tiba."
+
+        return None
+
     def process_text_command(self, text: str) -> tuple[str, str]:
+        # 1. Cek fast-path intent lokal (eksekusi instan 0ms tanpa halusinasi AI)
+        fast_ans = self._try_fast_intent(text)
+        if fast_ans:
+            print(f"[GeminiBrain FastIntent] ⚡ Eksekusi instan: \"{text}\" -> {fast_ans}")
+            return text, fast_ans
+
         if not self.client:
             self._init_gemini_client()
             if not self.client:
@@ -183,6 +234,12 @@ class GeminiBrain:
                     if not self.chat or self.active_model != mdl:
                         self.chat = self._create_chat_session(mdl)
                         self.active_model = mdl
+                    else:
+                        try:
+                            if hasattr(self.chat, "get_history") and len(self.chat.get_history()) > 6:
+                                self.chat = self._create_chat_session(mdl)
+                        except Exception:
+                            pass
 
                     response = self.chat.send_message(text)
                     self._track_usage(response)
@@ -191,7 +248,12 @@ class GeminiBrain:
                 except Exception as e:
                     err_str = str(e)
                     print(f"[GeminiBrain on {mdl}] {err_str}")
-                    
+
+                    if "thinking" in err_str.lower() and mdl not in self._no_thinking_config:
+                        # Model ini tidak mendukung pengaturan thinking: ulangi tanpa pengaturan tersebut
+                        self._no_thinking_config.add(mdl)
+                        self.chat = None
+                        continue
                     if "429" in err_str or "RESOURCE_EXHAUSTED" in err_str or "quota" in err_str.lower():
                         self._rotate_api_key()
                         continue
