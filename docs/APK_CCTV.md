@@ -10,8 +10,11 @@ HP (APK BUDI / browser)
 BUDI (aiohttp :8080) ── login, saklar, API rekaman, proxy live view, pan-tilt ONVIF
    │
    ├── go2rtc (127.0.0.1:1984 / :8554) ── 1 koneksi RTSP ke kamera, dibagi untuk live & rekam
-   └── cctv-record@cam1 (ffmpeg -c copy) ── /srv/cctv/cam1/YYYYMMDD_HHMMSS.mp4 (10 menit/segmen)
-        └── cctv-cleanup.timer (tiap jam) ── hapus rekaman > CCTV_RETENTION_DAYS / bila disk penuh
+   ├── cctv-record@cam1 (1080p, ffmpeg -c copy) ── /srv/cctv/cam1/YYYYMMDD_HHMMSS.mp4 (10 menit/segmen)
+   │    └── cctv-cleanup.timer (tiap jam) ── hapus 1080p > CCTV_RETENTION_DAYS (3 hari) / bila disk penuh
+   └── cctv-record@cam1_sd (720p, ffmpeg -c copy) ── /srv/cctv/cam1_sd/ (antrean upload)
+        └── cctv-upload.timer (tiap 10 menit) ── rclone move ke gdrive:CCTV/cam1/YYYY-MM-DD/
+             (file lokal dihapus setelah checksum cocok; di Google Drive tidak pernah dihapus)
 ```
 
 API konfigurasi go2rtc **tidak** diekspos. BUDI hanya meneruskan `video-stream.js`, `video-rtc.js`
@@ -52,6 +55,17 @@ sudo install -d -m 755 -o fazri -g fazri /srv/cctv
 sudo systemctl daemon-reload
 sudo systemctl enable --now go2rtc cctv-record@cam1 cctv-cleanup.timer
 ```
+
+## Backup Google Drive (rclone)
+
+1. Buat OAuth client sendiri di Google Cloud (Drive API, Desktop app, status *In production*),
+   karena client bawaan rclone dipakai bersama dan sering kena `RATE_LIMIT_EXCEEDED`.
+2. Di komputer dengan browser: `rclone config create gdrive drive client_id=... client_secret=... scope=drive.file`
+3. Salin `rclone.conf` ke `~/.config/rclone/rclone.conf` milik user `fazri` di STB (chmod 600).
+4. `sudo systemctl enable --now cctv-record@cam1_sd cctv-upload.timer`
+
+Status upload ditulis ke `/srv/cctv/.upload_status.json` dan tampil di tab CCTV (`/api/cctv/backup`),
+termasuk peringatan bila Google Drive tersisa < 200 GB.
 
 Lama penyimpanan diatur di `/etc/budi-cctv/record.env` (`CCTV_RETENTION_DAYS`, `CCTV_MIN_FREE_GB`).
 Tapo C200 ±1,6 Mbps ≈ 17 GB/hari per kamera.

@@ -1,0 +1,45 @@
+#!/bin/sh
+# Upload rekaman 720p (CCTV_UPLOAD_STREAMS) ke Google Drive, lalu hapus dari SSD.
+# File lokal hanya dihapus oleh rclone setelah upload terverifikasi (checksum MD5).
+# Rekaman di Google Drive TIDAK pernah dihapus.
+DIR="${CCTV_DIR:-/srv/cctv}"
+REMOTE="${CCTV_REMOTE:-gdrive:CCTV}"
+STATUS="$DIR/.upload_status.json"
+STAGE="$DIR/.upload"
+BWLIMIT="${CCTV_UPLOAD_BWLIMIT:-625k}"
+
+exec 9>"$DIR/.upload.lock"
+flock -n 9 || exit 0
+
+error=""
+for stream in ${CCTV_UPLOAD_STREAMS:-}; do
+  src="$DIR/$stream"
+  [ -d "$src" ] || continue
+  cam="${stream%_sd}"
+  # Pindahkan segmen yang sudah selesai (tidak ditulis > 2 menit) ke folder per tanggal
+  find "$src" -maxdepth 1 -name '*.mp4' -mmin +2 | while read -r f; do
+    name=$(basename "$f")
+    day=$(echo "$name" | sed -E 's/^([0-9]{4})([0-9]{2})([0-9]{2})_.*/\1-\2-\3/')
+    mkdir -p "$STAGE/$cam/$day" && mv "$f" "$STAGE/$cam/$day/$name"
+  done
+done
+
+if [ -d "$STAGE" ]; then
+  if ! rclone move "$STAGE" "$REMOTE" \
+      --include '*.mp4' --min-age 1m --bwlimit "$BWLIMIT" --transfers 1 --checkers 2 \
+      --drive-chunk-size 8M --retries 3 --low-level-retries 10 \
+      --delete-empty-src-dirs --log-level NOTICE 2>"$DIR/.upload_error.log"; then
+    error=$(tail -c 300 "$DIR/.upload_error.log" | tr -d '"\\' | tr '\n' ' ')
+  fi
+fi
+
+pending_files=$(find "$STAGE" "$DIR"/*_sd -name '*.mp4' 2>/dev/null | wc -l)
+pending_bytes=$(find "$STAGE" "$DIR"/*_sd -name '*.mp4' -printf '%s\n' 2>/dev/null | awk '{s+=$1} END {print s+0}')
+about=$(rclone about "${REMOTE%%:*}:" --json 2>/dev/null || echo '{}')
+now=$(date +%s)
+last_ok=$(sed -n 's/.*"last_success": \([0-9]*\).*/\1/p' "$STATUS" 2>/dev/null)
+[ -z "$error" ] && last_ok=$now
+cat > "$STATUS.tmp" <<EOF
+{"last_run": $now, "last_success": ${last_ok:-0}, "pending_files": $pending_files, "pending_bytes": $pending_bytes, "error": "$error", "drive": $about}
+EOF
+mv "$STATUS.tmp" "$STATUS"

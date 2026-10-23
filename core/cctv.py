@@ -2,6 +2,7 @@ import asyncio
 import base64
 import datetime
 import hashlib
+import json
 import os
 import re
 import time
@@ -91,6 +92,7 @@ class CCTVManager:
 
     def register_routes(self, app: web.Application):
         app.router.add_get("/api/cctv/cameras", self.handle_cameras)
+        app.router.add_get("/api/cctv/backup", self.handle_backup)
         app.router.add_get("/api/cctv/{cam}/recordings", self.handle_recordings)
         app.router.add_get("/api/cctv/{cam}/snapshot", self.handle_snapshot)
         app.router.add_post("/api/cctv/{cam}/ptz", self.handle_ptz)
@@ -108,6 +110,26 @@ class CCTVManager:
         if self._session is None or self._session.closed:
             self._session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=None, sock_connect=5))
         return self._session
+
+    # ---------- Status backup Google Drive (ditulis oleh /usr/local/bin/cctv-upload) ----------
+    async def handle_backup(self, request):
+        path = os.path.join(self.recordings_dir, ".upload_status.json")
+        try:
+            with open(path) as f:
+                data = json.load(f)
+        except (OSError, ValueError):
+            return web.json_response({"enabled": False})
+        drive = data.get("drive") or {}
+        return web.json_response({
+            "enabled": True,
+            "last_run": data.get("last_run", 0),
+            "last_success": data.get("last_success", 0),
+            "pending_files": data.get("pending_files", 0),
+            "pending_bytes": data.get("pending_bytes", 0),
+            "error": data.get("error", ""),
+            "drive_total": drive.get("total"),
+            "drive_free": drive.get("free"),
+        })
 
     # ---------- Info & rekaman ----------
     async def handle_cameras(self, request):

@@ -327,6 +327,33 @@ const BudiHome = (() => {
             meta.hidden = false;
         }
 
+        const backupEl = document.getElementById('cctv-backup');
+        const DRIVE_WARN_BYTES = 200 * 1024 ** 3;
+
+        function fmtBytes(b) {
+            if (b >= 1024 ** 4) return (b / 1024 ** 4).toFixed(2) + ' TB';
+            if (b >= 1024 ** 3) return (b / 1024 ** 3).toFixed(1) + ' GB';
+            return Math.round(b / 1024 ** 2) + ' MB';
+        }
+
+        async function loadBackup() {
+            let b;
+            try { b = await api('/api/cctv/backup'); } catch (e) { return; }
+            if (!b.enabled) { backupEl.hidden = true; return; }
+            const last = b.last_success ? new Date(b.last_success * 1000) : null;
+            const lastText = last ? `${String(last.getHours()).padStart(2, '0')}:${String(last.getMinutes()).padStart(2, '0')}` : 'belum pernah';
+            const stale = !last || Date.now() / 1000 - b.last_success > 3 * 3600;
+            const lowSpace = b.drive_free != null && b.drive_free < DRIVE_WARN_BYTES;
+            let html = `<i class="fa-brands fa-google-drive"></i> Cadangan 720p ke Google Drive · terakhir ${esc(lastText)}`;
+            if (b.pending_files) html += ` · ${b.pending_files} antre (${fmtBytes(b.pending_bytes)})`;
+            if (b.drive_free != null) html += ` · sisa ${fmtBytes(b.drive_free)}`;
+            if (lowSpace) html += `<br><strong>⚠️ Google Drive hampir penuh!</strong> Hapus rekaman lama di folder CCTV atau tambah kuota, agar upload tidak berhenti.`;
+            else if (stale && b.error) html += `<br><strong>⚠️ Upload gagal:</strong> ${esc(b.error.slice(0, 160))}`;
+            backupEl.innerHTML = html;
+            backupEl.classList.toggle('warn', lowSpace || (stale && !!b.error));
+            backupEl.hidden = false;
+        }
+
         function dateLabel(iso) {
             const d = new Date(iso + 'T00:00:00');
             const today = new Date(); today.setHours(0, 0, 0, 0);
@@ -389,6 +416,7 @@ const BudiHome = (() => {
             meta.hidden = true;
             startLive();
             loadRecordings();
+            loadBackup();
         }
 
         camRow.addEventListener('click', e => { const b = e.target.closest('[data-cam]'); if (b) selectCamera(b.dataset.cam); });
@@ -407,7 +435,10 @@ const BudiHome = (() => {
             const req = target.requestFullscreen || target.webkitRequestFullscreen || target.webkitEnterFullscreen;
             if (req) req.call(target);
         });
-        document.getElementById('btn-cctv-refresh').addEventListener('click', () => loadRecordings(dateRow.querySelector('.active')?.dataset.date));
+        document.getElementById('btn-cctv-refresh').addEventListener('click', () => {
+            loadRecordings(dateRow.querySelector('.active')?.dataset.date);
+            loadBackup();
+        });
 
         let initialized = false;
         async function show() {
@@ -429,6 +460,7 @@ const BudiHome = (() => {
             } else {
                 loadRecordings(dateRow.querySelector('.active')?.dataset.date);
             }
+            if (initialized) loadBackup();
         }
 
         function hide() {

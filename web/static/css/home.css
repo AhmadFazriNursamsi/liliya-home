@@ -403,3 +403,19 @@
     0%, 100% { opacity: 1; }
     50% { opacity: 0.25; }
 }
+
+.backup-note {
+    margin-top: 8px;
+    padding: 8px 12px;
+    border-radius: 10px;
+    font-size: 0.78rem;
+    line-height: 1.5;
+    color: var(--text-muted);
+    background: var(--card-bg);
+    border: 1px solid var(--card-border);
+}
+
+.backup-note.warn {
+    color: var(--accent-orange);
+    border-color: rgba(255, 158, 0, 0.45);
+}

@@ -1,0 +1,13 @@
+[Unit]
+Description=BUDI CCTV Upload ke Google Drive
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=fazri
+EnvironmentFile=/etc/budi-cctv/record.env
+ExecStart=/usr/local/bin/cctv-upload
+Nice=10
+IOSchedulingClass=idle
+MemoryMax=150M

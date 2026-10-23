@@ -1,12 +1,23 @@
 #!/bin/sh
-# Hapus rekaman lebih tua dari CCTV_RETENTION_DAYS, dan rekaman tertua bila sisa disk < CCTV_MIN_FREE_GB.
+# Hapus rekaman lokal (1080p) lebih tua dari CCTV_RETENTION_DAYS, dan rekaman tertua bila sisa disk < CCTV_MIN_FREE_GB.
+# Antrean upload Google Drive (CCTV_UPLOAD_STREAMS & .upload) tidak pernah dihapus di sini:
+# file itu hanya dihapus oleh cctv-upload setelah berhasil ter-upload.
 DIR="${CCTV_DIR:-/srv/cctv}"
-DAYS="${CCTV_RETENTION_DAYS:-5}"
+DAYS="${CCTV_RETENTION_DAYS:-3}"
 MIN_FREE="${CCTV_MIN_FREE_GB:-20}"
 [ -d "$DIR" ] || exit 0
-find "$DIR" -type f -name '*.mp4' -mmin +$((DAYS * 1440)) -delete
+
+local_files() {
+  for cam in "$DIR"/*/; do
+    name=$(basename "$cam")
+    case " ${CCTV_UPLOAD_STREAMS:-} " in *" $name "*) continue ;; esac
+    find "$cam" -maxdepth 1 -type f -name '*.mp4' "$@"
+  done
+}
+
+local_files -mmin +$((DAYS * 1440)) -delete
 while [ "$(df --output=avail -BG "$DIR" | tail -1 | tr -dc 0-9)" -lt "$MIN_FREE" ]; do
-  oldest=$(find "$DIR" -type f -name '*.mp4' -printf '%T@ %p\n' | sort -n | head -1 | cut -d' ' -f2-)
+  oldest=$(local_files -printf '%T@ %p\n' | sort -n | head -1 | cut -d' ' -f2-)
   [ -n "$oldest" ] || break
   rm -f "$oldest"
 done
