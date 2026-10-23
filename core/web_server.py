@@ -45,6 +45,12 @@ class WebServer:
         self.app.router.add_get('/api/device/{device_id}', self.handle_api_get_device)
         self.app.router.add_post('/api/device/{device_id}', self.handle_api_update_device)
 
+        # CRUD perangkat (Tambah / Edit / Hapus dari Web UI & APK)
+        self.app.router.add_post('/api/devices', self.handle_api_create_device)
+        self.app.router.add_put('/api/devices/{device_id}', self.handle_api_edit_device)
+        self.app.router.add_delete('/api/devices/{device_id}', self.handle_api_delete_device)
+        self.app.router.add_get('/api/tuya/devices', self.handle_api_tuya_devices)
+
         # CCTV Routes (rekaman, live view via go2rtc, pan-tilt)
         self.cctv.register_routes(self.app)
 
@@ -80,10 +86,68 @@ class WebServer:
                 return web.json_response({"status": "success", "device": updated})
         return web.json_response({"error": "Device not found or DB not initialized"}, status=404)
 
+    async def _json_body(self, request):
+        try:
+            body = await request.json()
+        except Exception:
+            raise web.HTTPBadRequest(text=json.dumps({"error": "Body JSON tidak valid"}), content_type="application/json")
+        if not isinstance(body, dict):
+            raise web.HTTPBadRequest(text=json.dumps({"error": "Body harus berupa objek JSON"}), content_type="application/json")
+        return body
+
+    async def handle_api_create_device(self, request):
+        if not self.smart_home_db:
+            return web.json_response({"error": "Database perangkat belum siap"}, status=503)
+        body = await self._json_body(request)
+        try:
+            device = self.smart_home_db.add_device(body)
+        except ValueError as e:
+            return web.json_response({"error": str(e)}, status=400)
+        self._request_tuya_sync()
+        return web.json_response({"status": "success", "device": device}, status=201)
+
+    async def handle_api_edit_device(self, request):
+        if not self.smart_home_db:
+            return web.json_response({"error": "Database perangkat belum siap"}, status=503)
+        body = await self._json_body(request)
+        allowed = {k: body[k] for k in ("name", "room", "type", "aliases", "tuya_id") if k in body}
+        try:
+            device = self.smart_home_db.update_device_info(request.match_info["device_id"], allowed)
+        except ValueError as e:
+            return web.json_response({"error": str(e)}, status=400)
+        if not device:
+            return web.json_response({"error": "Perangkat tidak ditemukan"}, status=404)
+        self._request_tuya_sync()
+        return web.json_response({"status": "success", "device": device})
+
+    async def handle_api_delete_device(self, request):
+        if not self.smart_home_db or not self.smart_home_db.delete_device(request.match_info["device_id"]):
+            return web.json_response({"error": "Perangkat tidak ditemukan"}, status=404)
+        return web.json_response({"status": "success"})
+
+    async def handle_api_tuya_devices(self, request):
+        bridge = getattr(self.smart_home_db, "tuya_bridge", None) if self.smart_home_db else None
+        if not bridge or not getattr(bridge, "cloud", None):
+            return web.json_response({"enabled": False, "devices": []})
+        try:
+            devices = await asyncio.get_running_loop().run_in_executor(None, bridge.list_cloud_devices)
+        except Exception as e:
+            return web.json_response({"enabled": True, "error": str(e), "devices": []}, status=502)
+        used = {d.get("tuya_id"): d.get("name") for d in self.smart_home_db.get_all_devices() if d.get("tuya_id")}
+        for d in devices:
+            d["used_by"] = used.get(d["tuya_id"])
+        return web.json_response({"enabled": True, "devices": devices})
+
+    def _request_tuya_sync(self):
+        bridge = getattr(self.smart_home_db, "tuya_bridge", None) if self.smart_home_db else None
+        if bridge and hasattr(bridge, "request_sync"):
+            bridge.request_sync()
+
     async def handle_ws(self, request):
         ws = web.WebSocketResponse()
         await ws.prepare(request)
         self.websockets.add(ws)
+        self._request_tuya_sync()
         print(f"[WebUI] 🌐 Client terhubung via WebSocket ({len(self.websockets)} aktif)")
         
         # Kirim status awal

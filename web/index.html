@@ -13,7 +13,7 @@
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
     <link rel="stylesheet" href="/static/css/style.css?v=20260830_clean_v1">
-    <link rel="stylesheet" href="/static/css/home.css?v=20261024_v4">
+    <link rel="stylesheet" href="/static/css/home.css?v=20261024_v5">
     <!-- Google Fonts & FontAwesome -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -145,10 +145,16 @@
                 <div class="pill-row">
                     <button class="pill-btn on" id="btn-all-on"><i class="fa-solid fa-lightbulb"></i> Semua Nyala</button>
                     <button class="pill-btn" id="btn-all-off"><i class="fa-regular fa-lightbulb"></i> Semua Mati</button>
+                    <button class="pill-btn active" id="btn-add-device"><i class="fa-solid fa-plus"></i> Tambah</button>
                 </div>
             </div>
             <div id="home-rooms" class="segment-hours"></div>
         </section>
+
+        <!-- Modal Tambah / Edit Perangkat -->
+        <div class="modal" id="device-modal" role="dialog" aria-modal="true" hidden>
+            <div class="modal-card"></div>
+        </div>
 
         <!-- Panel CCTV: Live View, Pan-Tilt & Riwayat Rekaman -->
         <section class="tab-panel" id="panel-cctv">
@@ -238,7 +244,7 @@
         </footer>
     </div>
 
-    <script src="/static/js/home.js?v=20261024_v5"></script>
+    <script src="/static/js/home.js?v=20261024_v6"></script>
     <script>
 // =========================================================
 // STB Smart Voice Assistant & Smart Display (BUDI)

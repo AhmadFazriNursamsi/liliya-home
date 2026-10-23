@@ -25,7 +25,11 @@ const BudiHome = (() => {
             location.href = '/login?next=' + encodeURIComponent(location.pathname + location.hash);
             throw new Error('Unauthorized');
         }
-        if (!res.ok) throw new Error(`${res.status}`);
+        if (!res.ok) {
+            let msg = `Error ${res.status}`;
+            try { const j = await res.json(); if (j.error) msg = j.error; } catch (e) {}
+            throw new Error(msg);
+        }
         return res.json();
     }
 
@@ -66,7 +70,7 @@ const BudiHome = (() => {
     function cardHtml(d) {
         const switchable = SWITCHABLE.has(d.type) || (d.state !== undefined && !String(d.type).startsWith('sensor'));
         const on = switchable && isOn(d);
-        const cls = ['dev-card', switchable ? 'switchable' : '', on ? 'is-on' : '', isAlert(d) ? 'alert' : '', pending.has(d.id) ? 'pending' : ''].join(' ');
+        const cls = ['dev-card', switchable ? 'switchable' : '', on ? 'is-on' : '', isAlert(d) ? 'alert' : '', pending.has(d.id) ? 'pending' : '', d.online === false ? 'offline' : ''].join(' ');
         let extra = '';
         if (d.type === 'light' && on) {
             extra = `<div class="dev-extra"><i class="fa-solid fa-sun"></i><input type="range" min="5" max="100" step="5" value="${Number(d.brightness ?? 100)}" data-act="brightness" aria-label="Kecerahan"></div>`;
@@ -80,7 +84,10 @@ const BudiHome = (() => {
                 <div class="dev-icon"><i class="fa-solid ${esc(d.icon || 'fa-plug')}"></i></div>
                 ${switchable ? '<span class="switch"></span>' : ''}
             </div>
-            <div><div class="dev-name">${esc(d.name || d.id)}</div><div class="dev-state">${esc(describe(d))}</div></div>
+            <div class="dev-bottom">
+                <div><div class="dev-name">${esc(d.name || d.id)}</div><div class="dev-state">${esc(describe(d))}${d.online === false ? ' <span class="dev-badge">Offline</span>' : ''}</div></div>
+                <button class="dev-edit" data-act="edit" aria-label="Edit ${esc(d.name || d.id)}" title="Edit perangkat"><i class="fa-solid fa-pen"></i></button>
+            </div>
             ${extra}
         </div>`;
     }
@@ -89,7 +96,8 @@ const BudiHome = (() => {
         if (!homeGrid) return;
         const list = [...devices.values()];
         if (!list.length) {
-            homeGrid.innerHTML = '<div class="empty-note">Belum ada perangkat smart home.</div>';
+            homeGrid.innerHTML = '<div class="empty-note">Belum ada perangkat. Tekan <strong>+ Tambah</strong> untuk menambahkan lampu dari Smart Life.</div>';
+            if (homeSummary) homeSummary.textContent = 'Belum ada perangkat';
             return;
         }
         const rooms = new Map();
@@ -138,6 +146,12 @@ const BudiHome = (() => {
 
     if (homeGrid) {
         homeGrid.addEventListener('click', (e) => {
+            const editBtn = e.target.closest('[data-act="edit"]');
+            if (editBtn) {
+                const d = devices.get(editBtn.closest('.dev-card').dataset.id);
+                if (d) DeviceEditor.openEdit(d);
+                return;
+            }
             const card = e.target.closest('.dev-card.switchable');
             if (!card) return;
             const id = card.dataset.id;
@@ -172,11 +186,17 @@ const BudiHome = (() => {
     document.getElementById('btn-all-on')?.addEventListener('click', () => setAllLights(true));
     document.getElementById('btn-all-off')?.addEventListener('click', () => setAllLights(false));
 
+    function replaceDevices(list) {
+        const next = new Map();
+        list.forEach(d => next.set(d.id, pending.has(d.id) && devices.has(d.id) ? devices.get(d.id) : d));
+        devices.clear();
+        next.forEach((d, id) => devices.set(id, d));
+        renderDevices();
+    }
+
     async function loadDevices() {
         try {
-            const list = await api('/api/devices');
-            list.forEach(d => { if (!pending.has(d.id)) devices.set(d.id, d); });
-            renderDevices();
+            replaceDevices(await api('/api/devices'));
         } catch (e) {
             if (homeGrid && !devices.size) homeGrid.innerHTML = '<div class="empty-note">Gagal memuat perangkat. Periksa koneksi ke BUDI.</div>';
         }
@@ -185,8 +205,7 @@ const BudiHome = (() => {
     // Event realtime dari WebSocket BUDI (dipanggil dari handleServerEvent)
     function onEvent(data) {
         if (data.type === 'smart_home_sync' && Array.isArray(data.devices)) {
-            data.devices.forEach(d => { if (!pending.has(d.id)) devices.set(d.id, d); });
-            renderDevices();
+            replaceDevices(data.devices);
         } else if (data.type === 'smart_home_device_update' && data.device) {
             if (!pending.has(data.device.id)) {
                 devices.set(data.device.id, data.device);
@@ -194,6 +213,215 @@ const BudiHome = (() => {
             }
         }
     }
+
+    // ---------- Tambah / Edit / Hapus perangkat ----------
+    const DeviceEditor = (() => {
+        const modal = document.getElementById('device-modal');
+        const card = modal.querySelector('.modal-card');
+        const TYPE_LABELS = { light: 'Lampu', switch: 'Saklar / Stopkontak', fan: 'Kipas', ac: 'AC' };
+        const TYPE_ICONS = { light: 'fa-lightbulb', switch: 'fa-plug', fan: 'fa-fan', ac: 'fa-snowflake' };
+        let lastFocus = null;
+
+        function open(html) {
+            if (modal.hidden) lastFocus = document.activeElement;
+            card.innerHTML = html;
+            modal.hidden = false;
+            document.body.classList.add('modal-open');
+            (card.querySelector('[autofocus]') || card.querySelector('button, input, select'))?.focus();
+        }
+
+        function close() {
+            modal.hidden = true;
+            card.innerHTML = '';
+            document.body.classList.remove('modal-open');
+            lastFocus?.focus?.();
+        }
+
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal || e.target.closest('[data-close]')) close();
+        });
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && !modal.hidden) close();
+        });
+
+        function rooms() {
+            return [...new Set([...devices.values()].map(d => d.room).filter(Boolean))].sort();
+        }
+
+        // Langkah 1: pilih perangkat dari akun Smart Life
+        async function openPicker(onPick, { allowManual = true, currentTuyaId = '' } = {}) {
+            open(`<h3>Pilih Perangkat Smart Life</h3><div class="modal-loading"><i class="fa-solid fa-spinner fa-spin"></i> Mengambil daftar perangkat dari Smart Life...</div>`);
+            let data;
+            try {
+                data = await api('/api/tuya/devices');
+            } catch (e) {
+                data = { enabled: true, error: e.message, devices: [] };
+            }
+            if (modal.hidden) return;
+            const list = data.devices || [];
+            let body;
+            if (!data.enabled) {
+                body = '<div class="empty-note">Integrasi Tuya / Smart Life belum aktif di config.yaml.</div>';
+            } else if (data.error) {
+                body = `<div class="form-error">Gagal mengambil perangkat: ${esc(data.error)}</div>`;
+            } else if (!list.length) {
+                body = '<div class="empty-note">Belum ada perangkat di akun Smart Life.</div>';
+            } else {
+                body = `<div class="tuya-list">${list.map(t => {
+                    const used = t.used_by && t.tuya_id !== currentTuyaId;
+                    return `<button type="button" class="tuya-item" data-tuya="${esc(t.tuya_id)}" ${used ? 'disabled' : ''}>
+                        <span class="tuya-icon"><i class="fa-solid ${TYPE_ICONS[t.suggested_type] || 'fa-plug'}"></i></span>
+                        <span class="tuya-info"><strong>${esc(t.name)}</strong>
+                            <small>${t.online ? '<span class="dot-online"></span>Online' : '<span class="dot-offline"></span>Offline'}${t.via_gateway ? ' · lewat gateway' : ''}${used ? ` · dipakai "${esc(t.used_by)}"` : ''}</small></span>
+                        ${used ? '' : '<i class="fa-solid fa-chevron-right"></i>'}
+                    </button>`;
+                }).join('')}</div>`;
+            }
+            open(`<h3>Pilih Perangkat Smart Life</h3>
+                <p class="modal-sub">Perangkat harus sudah di-pairing di aplikasi Smart Life. Lampu Bluetooth perlu terhubung ke gateway agar bisa dikontrol dari internet.</p>
+                ${body}
+                <div class="modal-actions">
+                    ${allowManual ? '<button type="button" class="pill-btn" data-act="manual"><i class="fa-solid fa-pen-ruler"></i> Tanpa Smart Life</button>' : ''}
+                    <button type="button" class="pill-btn" data-act="reload"><i class="fa-solid fa-rotate"></i> Muat ulang</button>
+                    <button type="button" class="pill-btn" data-close>Batal</button>
+                </div>`);
+            card.querySelector('[data-act="reload"]').addEventListener('click', () => openPicker(onPick, { allowManual, currentTuyaId }));
+            card.querySelector('[data-act="manual"]')?.addEventListener('click', () => onPick(null));
+            card.querySelectorAll('.tuya-item:not([disabled])').forEach(b => b.addEventListener('click', () => {
+                onPick(list.find(t => t.tuya_id === b.dataset.tuya));
+            }));
+        }
+
+        // Langkah 2: form nama, ruangan, jenis & nama panggilan suara
+        function openForm(mode, draft) {
+            const title = mode === 'add' ? 'Tambah Perangkat' : 'Edit Perangkat';
+            const typeOptions = Object.entries(TYPE_LABELS).map(([v, l]) =>
+                `<option value="${v}" ${draft.type === v ? 'selected' : ''}>${l}</option>`).join('');
+            const aliases = (draft.aliases || []).filter(a => a !== String(draft.name || '').toLowerCase()).join(', ');
+            open(`<h3>${title}</h3>
+                <form class="device-form" novalidate>
+                    <label>Nama perangkat
+                        <input name="name" maxlength="40" required autofocus value="${esc(draft.name || '')}" placeholder="mis. Lampu Dapur">
+                    </label>
+                    <label>Ruangan
+                        <input name="room" maxlength="30" required list="room-options" value="${esc(draft.room || '')}" placeholder="mis. Dapur">
+                        <datalist id="room-options">${rooms().map(r => `<option value="${esc(r)}">`).join('')}</datalist>
+                    </label>
+                    <label>Jenis
+                        <select name="type">${typeOptions}</select>
+                    </label>
+                    <label>Nama panggilan untuk perintah suara <small>(opsional, pisahkan dengan koma)</small>
+                        <input name="aliases" maxlength="200" value="${esc(aliases)}" placeholder="mis. lampu masak, lampu belakang">
+                    </label>
+                    <div class="tuya-link">
+                        <i class="fa-solid fa-link"></i>
+                        <span>${draft.tuya_id ? `Smart Life: <strong>${esc(draft.tuya_name || draft.tuya_id)}</strong>` : 'Tidak terhubung ke Smart Life (perangkat virtual)'}</span>
+                        <button type="button" class="pill-btn" data-act="relink">${draft.tuya_id ? 'Ganti' : 'Hubungkan'}</button>
+                        ${draft.tuya_id ? '<button type="button" class="pill-btn" data-act="unlink">Lepas</button>' : ''}
+                    </div>
+                    <div class="form-error" hidden></div>
+                    <div class="modal-actions">
+                        ${mode === 'edit' ? '<button type="button" class="pill-btn danger" data-act="delete"><i class="fa-solid fa-trash"></i> Hapus</button><span class="spacer"></span>' : ''}
+                        <button type="button" class="pill-btn" data-close>Batal</button>
+                        <button type="submit" class="pill-btn active"><i class="fa-solid fa-check"></i> Simpan</button>
+                    </div>
+                    <div class="delete-confirm" hidden>
+                        <p>Hapus <strong>${esc(draft.name || '')}</strong> dari BUDI? Perangkat tetap ada di Smart Life dan bisa ditambahkan lagi kapan saja.</p>
+                        <div class="modal-actions">
+                            <button type="button" class="pill-btn" data-act="cancel-delete">Batal</button>
+                            <button type="button" class="pill-btn danger" data-act="confirm-delete"><i class="fa-solid fa-trash"></i> Ya, hapus</button>
+                        </div>
+                    </div>
+                </form>`);
+
+            const form = card.querySelector('form');
+            const errorBox = form.querySelector('.form-error');
+            const field = (n) => form.elements[n].value;
+            const readForm = () => ({
+                ...draft,
+                name: field('name').trim(),
+                room: field('room').trim(),
+                type: field('type'),
+                aliases: field('aliases').split(',').map(a => a.trim()).filter(Boolean),
+            });
+            const showError = (msg) => { errorBox.textContent = msg; errorBox.hidden = false; };
+
+            form.querySelector('[data-act="relink"]').addEventListener('click', () => {
+                const current = readForm();
+                openPicker((t) => openForm(mode, t
+                    ? { ...current, tuya_id: t.tuya_id, tuya_name: t.name }
+                    : { ...current, tuya_id: '', tuya_name: '' }), { currentTuyaId: draft.tuya_id });
+            });
+            form.querySelector('[data-act="unlink"]')?.addEventListener('click', () => openForm(mode, { ...readForm(), tuya_id: '', tuya_name: '' }));
+
+            const confirmBox = form.querySelector('.delete-confirm');
+            form.querySelector('[data-act="delete"]')?.addEventListener('click', () => { confirmBox.hidden = false; });
+            form.querySelector('[data-act="cancel-delete"]')?.addEventListener('click', () => { confirmBox.hidden = true; });
+            form.querySelector('[data-act="confirm-delete"]')?.addEventListener('click', async (e) => {
+                e.currentTarget.disabled = true;
+                try {
+                    await api(`/api/devices/${encodeURIComponent(draft.id)}`, { method: 'DELETE' });
+                    devices.delete(draft.id);
+                    renderDevices();
+                    close();
+                    toast(`${draft.name} dihapus`);
+                } catch (err) {
+                    e.currentTarget.disabled = false;
+                    confirmBox.hidden = true;
+                    showError(err.message);
+                }
+            });
+
+            form.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const data = readForm();
+                if (!data.name) return showError('Nama perangkat wajib diisi.');
+                if (!data.room) return showError('Ruangan wajib diisi.');
+                const submit = form.querySelector('[type="submit"]');
+                submit.disabled = true;
+                const payload = { name: data.name, room: data.room, type: data.type, aliases: data.aliases, tuya_id: data.tuya_id || '' };
+                try {
+                    const res = mode === 'add'
+                        ? await api('/api/devices', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+                        : await api(`/api/devices/${encodeURIComponent(draft.id)}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+                    devices.set(res.device.id, res.device);
+                    renderDevices();
+                    close();
+                    toast(mode === 'add' ? `${res.device.name} ditambahkan` : 'Perubahan disimpan');
+                } catch (err) {
+                    submit.disabled = false;
+                    showError(err.message);
+                }
+            });
+        }
+
+        function openAdd() {
+            openPicker((t) => openForm('add', t
+                ? { type: t.suggested_type, tuya_id: t.tuya_id, tuya_name: t.name, room: '' }
+                : { type: 'light', tuya_id: '', room: '' }));
+        }
+
+        async function openEdit(d) {
+            const draft = { ...d, tuya_name: '' };
+            openForm('edit', draft);
+            if (d.tuya_id) {
+                // Tampilkan nama perangkat Smart Life (bukan hanya ID) bila tersedia
+                try {
+                    const data = await api('/api/tuya/devices');
+                    const t = (data.devices || []).find(x => x.tuya_id === d.tuya_id);
+                    const nameEl = card.querySelector('.tuya-link strong');
+                    if (t && nameEl && !modal.hidden) {
+                        draft.tuya_name = t.name;
+                        nameEl.textContent = t.name;
+                    }
+                } catch (e) {}
+            }
+        }
+
+        document.getElementById('btn-add-device')?.addEventListener('click', openAdd);
+        return { openAdd, openEdit };
+    })();
+
 
     // ---------- Toast ----------
     let toastTimer = null;

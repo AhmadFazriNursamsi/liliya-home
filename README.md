@@ -60,8 +60,15 @@ Everything runs on the box itself; both 24/7 video recorders together use about 
 
 ### 🏠 Smart home
 - Manual switches grouped by room, brightness slider, AC temperature and fan speed, "all lights on/off".
+- **Device management (CRUD) from the app:** add devices straight from the user's Smart Life account
+  (listed with online status), rename, move rooms, set voice nicknames, re-link or delete. New devices
+  are immediately controllable by voice, with validation and duplicate protection on the server.
+- **State sync from Tuya:** online/offline (with a grace period, because Bluetooth sub-devices behind a
+  gateway report flapping status) and on/off when the device reports it. Polls every 15 s only while
+  someone has the app open, every 5 min otherwise, batching all devices into one API call.
 - Real-time state shared between voice commands, the web UI and the app over **WebSocket**.
-- Device state synchronized to **Firebase Realtime Database**, physical devices through the **Tuya Cloud API**.
+- Device state synchronized to **Firebase Realtime Database**; physical Bluetooth bulbs controlled through
+  the **Tuya Cloud API** via a Tuya Bluetooth gateway.
 - REST API (`/api/devices`, `/api/device/{id}`) with API-token auth for ESP32 / IoT clients.
 
 ### 📹 CCTV / NVR (TP-Link Tapo C200)
@@ -145,6 +152,7 @@ flowchart LR
 | Howling sound in live view | Live view starts **muted**, with an explicit sound toggle | Diagnosed by FFT analysis of the audio: the tone drifted in frequency (acoustic feedback between the phone speaker and the camera mic). |
 | Exposing the dashboard to the internet safely | Trust by network origin + signed session cookie | Cloudflare Tunnel connects from `127.0.0.1`, so loopback is explicitly untrusted. |
 | Voice input inside the Android app | Native `SpeechRecognizer` bridged through `@JavascriptInterface` | Android WebView does not implement the Web Speech API. |
+| Tuya API quota & flapping status | Adaptive polling (15 s while the app is open, 5 min idle), one batched call for all devices, 60 s offline grace period | Measured the Bluetooth gateway toggling offline/online roughly every minute in the Tuya cloud. |
 | Low-RAM device | No Docker daemon on the box; systemd units with `MemoryMax`, `Nice`, idle I/O priority | Each service's memory is capped so a misbehaving process cannot starve the assistant. |
 
 ## Tech stack
@@ -193,8 +201,8 @@ Example voice commands (Indonesian): *"Nyalakan lampu teras"*, *"Putar lagu Shei
 
 ## Known limitations & roadmap
 
-- The current bulbs are Bluetooth-only; controlling them through the Tuya Cloud needs a Tuya Bluetooth
-  gateway. Direct BLE control from the box is a planned experiment.
+- Tuya does not report on/off state for these Bluetooth bulbs with the project's current instruction mode,
+  so changes made outside BUDI (Smart Life app, wall switch) are only reflected once Tuya reports them.
 - The free Edge TTS endpoint has started rejecting requests (HTTP 403); evaluating an update or an
   offline TTS fallback.
 - Planned: motion-event timeline for recordings, push notifications, multi-camera layout.
