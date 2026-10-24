@@ -483,7 +483,8 @@ class RouterManager:
         return await asyncio.get_running_loop().run_in_executor(None, fn, *args)
 
     @staticmethod
-    def _error(e: Exception, status=502):
+    def _error(e: Exception, status=409):
+        # Jangan pakai 5xx: Cloudflare Tunnel mengganti isi respons 5xx sehingga pesan error hilang di aplikasi
         return web.json_response({"error": str(e)}, status=status)
 
     async def handle_status(self, request):

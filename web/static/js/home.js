@@ -26,7 +26,7 @@ const BudiHome = (() => {
             throw new Error('Unauthorized');
         }
         if (!res.ok) {
-            let msg = `Error ${res.status}`;
+            let msg = res.status >= 500 ? `Server tidak merespons dengan benar (kode ${res.status}). Coba lagi sebentar.` : `Error ${res.status}`;
             try { const j = await res.json(); if (j.error) msg = j.error; } catch (e) {}
             throw new Error(msg);
         }
