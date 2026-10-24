@@ -232,9 +232,7 @@ public class MainActivity extends Activity {
         while (root.getCause() != null && root.getCause() != root) root = root.getCause();
         String detail = root.getClass().getSimpleName() + ": " + root.getMessage();
         String hint = "SERVICE_NOT_AVAILABLE".equals(root.getMessage())
-                ? "
-
-Di HP Xiaomi/Redmi: Info apl Liliya → nyalakan Autostart, Penghemat baterai → Tanpa batasan, "
+                ? "\n\nDi HP Xiaomi/Redmi: Info apl Liliya → nyalakan Autostart, Penghemat baterai → Tanpa batasan, "
                 + "lalu tutup dan buka lagi aplikasi." : "";
         SharedPreferences sp = getSharedPreferences(PREFS, MODE_PRIVATE);
         if (detail.equals(sp.getString("push_error", ""))) return;
