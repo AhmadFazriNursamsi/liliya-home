@@ -141,7 +141,7 @@ class PushManager:
         self._snapshots[sid] = (now + SNAPSHOT_TTL, jpeg)
         return f"{self.public_url}/push/snap/{sid}.jpg"
 
-    async def notify_motion(self, cam_id: str, cam_name: str, kind: str, ts: float, snapshot_coro=None):
+    async def notify_motion(self, cam_id: str, cam_name: str, kind: str, ts: float, snapshot=None):
         if not self.enabled or not self.settings().get("motion", True):
             return
         key = (cam_id, kind)
@@ -149,9 +149,10 @@ class PushManager:
             return
         self._last_motion_push[key] = ts
         image_url = ""
-        if snapshot_coro is not None:
+        if snapshot is not None:
             try:
-                jpeg = await snapshot_coro
+                # Foto baru diambil bila notifikasi benar-benar dikirim (bukan saat dilewati karena jeda)
+                jpeg = await snapshot()
                 if jpeg:
                     image_url = self.store_snapshot(jpeg)
             except Exception as e:

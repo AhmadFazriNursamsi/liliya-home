@@ -191,7 +191,7 @@ class CCTVManager:
             if self.push and (not current or kind == "people"):
                 cam = self.cameras.get(cam_id, {})
                 asyncio.ensure_future(self.push.notify_motion(
-                    cam_id, cam.get("name", cam_id), kind, now, self._snapshot_bytes(cam)))
+                    cam_id, cam.get("name", cam_id), kind, now, lambda: self._snapshot_bytes(cam)))
             current[kind] = now
         elif not active and kind in current:
             self._write_motion(cam_id, kind, current.pop(kind), now)
