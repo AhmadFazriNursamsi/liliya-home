@@ -103,6 +103,7 @@ class CCTVManager:
         self._motion_active = {}   # cam_id -> {kind: start_ts}
         self._motion_tasks = []
         self._motion_pruned = ""
+        self.push = None           # PushManager (notifikasi FCM saat ada gerakan), di-set oleh WebServer
         if self.enabled:
             print(f"[CCTV] 📹 {len(self.cameras)} kamera aktif, rekaman di {self.recordings_dir}")
 
@@ -186,6 +187,11 @@ class CCTVManager:
     def _set_motion(self, cam_id: str, kind: str, active: bool, now: float):
         current = self._motion_active.setdefault(cam_id, {})
         if active and kind not in current:
+            # Notifikasi saat gerakan baru dimulai, atau saat kamera mengenali ada orang
+            if self.push and (not current or kind == "people"):
+                cam = self.cameras.get(cam_id, {})
+                asyncio.ensure_future(self.push.notify_motion(
+                    cam_id, cam.get("name", cam_id), kind, now, self._snapshot_bytes(cam)))
             current[kind] = now
         elif not active and kind in current:
             self._write_motion(cam_id, kind, current.pop(kind), now)
@@ -353,6 +359,17 @@ class CCTVManager:
         return web.FileResponse(path, headers=headers)
 
     # ---------- Live view (proxy ke go2rtc di localhost) ----------
+    async def _snapshot_bytes(self, cam: dict):
+        if not cam:
+            return None
+        session = await self._http()
+        try:
+            async with session.get(f"{self.go2rtc_url}/api/frame.jpeg", params={"src": cam["live_stream"]},
+                                   timeout=aiohttp.ClientTimeout(total=8)) as r:
+                return await r.read() if r.status == 200 else None
+        except (aiohttp.ClientError, asyncio.TimeoutError):
+            return None
+
     async def handle_snapshot(self, request):
         cam = self._camera(request)
         session = await self._http()

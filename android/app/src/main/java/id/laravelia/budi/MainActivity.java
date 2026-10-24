@@ -11,6 +11,7 @@ import android.content.pm.ActivityInfo;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
 import android.speech.RecognitionListener;
@@ -37,6 +38,9 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import com.google.firebase.FirebaseApp;
+import com.google.firebase.messaging.FirebaseMessaging;
+
 import org.json.JSONObject;
 
 import java.util.ArrayList;
@@ -50,8 +54,10 @@ public class MainActivity extends Activity {
     private static final String PREFS = "budi";
     private static final String KEY_URL = "server_url";
     private static final String DEFAULT_URL = "https://smarthome.laravelia.my.id";
-    private static final String LAN_URL = "http://192.168.1.3:8080";
+    private static final String LAN_URL = "http://192.168.1.5:8080";
+    private static final String OLD_LAN_URL = "http://192.168.1.3:8080";   // IP STB sebelum 24 Okt 2026
     private static final int REQ_MIC = 1;
+    private static final int REQ_NOTIF = 2;
 
     private FrameLayout root;
     private WebView webView;
@@ -77,8 +83,58 @@ public class MainActivity extends Activity {
         if (savedInstanceState != null) {
             webView.restoreState(savedInstanceState);
         } else {
-            webView.loadUrl(getServerUrl());
+            webView.loadUrl(getServerUrl() + (opensCctv(getIntent()) ? "/#cctv" : ""));
         }
+
+        LiliyaMessagingService.createChannels(this);
+        requestNotificationPermission();
+        initPush();
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        // Notifikasi gerakan diketuk saat aplikasi sudah terbuka: langsung ke tab CCTV
+        if (opensCctv(intent) && webView != null) {
+            webView.evaluateJavascript("window.BudiHome ? BudiHome.setTab('cctv') : (location.hash = 'cctv')", null);
+        }
+    }
+
+    private static boolean opensCctv(Intent intent) {
+        return intent != null && "cctv".equals(intent.getStringExtra("open"));
+    }
+
+    // ---------------- Notifikasi (FCM) ----------------
+
+    private void requestNotificationPermission() {
+        if (Build.VERSION.SDK_INT >= 33
+                && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, REQ_NOTIF);
+        }
+    }
+
+    private void initPush() {
+        try {
+            if (FirebaseApp.getApps(this).isEmpty() && FirebaseApp.initializeApp(this) == null) return;
+            FirebaseMessaging.getInstance().getToken().addOnSuccessListener(token -> {
+                getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString(LiliyaMessagingService.PREF_TOKEN, token).apply();
+                registerPushToken();
+            });
+        } catch (Exception e) {
+            // APK dibangun tanpa google-services.json: notifikasi tidak tersedia, aplikasi tetap jalan
+        }
+    }
+
+    /** Daftarkan token FCM ke server lewat halaman yang sudah login (memakai cookie sesi WebView). */
+    private void registerPushToken() {
+        String token = getSharedPreferences(PREFS, MODE_PRIVATE).getString(LiliyaMessagingService.PREF_TOKEN, null);
+        if (token == null || webView == null) return;
+        String device = Build.MANUFACTURER + " " + Build.MODEL;
+        String js = "(function(){if(location.pathname.indexOf('/login')===0)return;"
+                + "fetch('/api/push/register',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},"
+                + "body:JSON.stringify({token:" + JSONObject.quote(token) + ",device:" + JSONObject.quote(device) + "})}).catch(function(){});})()";
+        runOnUiThread(() -> webView.evaluateJavascript(js, null));
     }
 
     // ---------------- WebView ----------------
@@ -113,6 +169,7 @@ public class MainActivity extends Activity {
             @Override
             public void onPageFinished(WebView view, String url) {
                 CookieManager.getInstance().flush();
+                registerPushToken();
             }
 
             @Override
@@ -284,7 +341,12 @@ public class MainActivity extends Activity {
 
     private String getServerUrl() {
         SharedPreferences p = getSharedPreferences(PREFS, MODE_PRIVATE);
-        return p.getString(KEY_URL, DEFAULT_URL);
+        String url = p.getString(KEY_URL, DEFAULT_URL);
+        if (OLD_LAN_URL.equals(url)) {
+            url = LAN_URL;
+            p.edit().putString(KEY_URL, url).apply();
+        }
+        return url;
     }
 
     private String appVersion() {
@@ -383,6 +445,7 @@ public class MainActivity extends Activity {
 
     @Override
     public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        if (requestCode == REQ_NOTIF) return;   // ditolak pun aplikasi tetap jalan, hanya tanpa notifikasi
         if (requestCode != REQ_MIC) return;
         boolean granted = grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED;
         if (pendingWebPermission != null) {

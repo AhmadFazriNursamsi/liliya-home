@@ -2,6 +2,12 @@ plugins {
     id 'com.android.application'
 }
 
+// Notifikasi FCM butuh app/google-services.json (dari Firebase Console, diisi CI lewat secret
+// GOOGLE_SERVICES_JSON_BASE64). Tanpa file itu APK tetap bisa dibangun, hanya tanpa notifikasi.
+if (file('google-services.json').exists()) {
+    apply plugin: 'com.google.gms.google-services'
+}
+
 def runNumber = (System.getenv('GITHUB_RUN_NUMBER') ?: '1').toInteger()
 def keystorePath = System.getenv('BUDI_KEYSTORE_PATH')
 
@@ -39,4 +45,9 @@ android {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
     }
+}
+
+dependencies {
+    implementation platform('com.google.firebase:firebase-bom:33.7.0')
+    implementation 'com.google.firebase:firebase-messaging'
 }

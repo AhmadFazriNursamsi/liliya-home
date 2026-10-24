@@ -599,6 +599,37 @@ const BudiHome = (() => {
                 <div class="pill-row motion-list">${chips}</div>`;
         }
 
+        // Notifikasi gerakan ke HP (FCM): sakelar global + tombol tes
+        const pushEl = document.getElementById('cctv-push');
+        async function loadPush() {
+            let p;
+            try { p = await api('/api/push/settings'); } catch (e) { pushEl.hidden = true; return; }
+            if (!p.enabled) { pushEl.hidden = true; return; }
+            pushEl.innerHTML = `<i class="fa-solid ${p.motion ? 'fa-bell' : 'fa-bell-slash'}"></i>
+                <span>Notifikasi gerakan ke HP · <strong>${p.motion ? 'aktif' : 'mati'}</strong><small>${p.devices} HP terdaftar</small></span>
+                <button class="pill-btn icon" data-push="test" title="Kirim notifikasi tes" aria-label="Kirim notifikasi tes"><i class="fa-solid fa-paper-plane"></i></button>
+                <button class="switch ${p.motion ? 'on' : ''}" data-push="toggle" role="switch" aria-checked="${p.motion}" aria-label="Notifikasi gerakan"><span></span></button>`;
+            pushEl.classList.toggle('off', !p.motion);
+            pushEl.hidden = false;
+        }
+        pushEl.addEventListener('click', async (e) => {
+            const b = e.target.closest('[data-push]');
+            if (!b) return;
+            b.disabled = true;
+            try {
+                if (b.dataset.push === 'toggle') {
+                    const on = b.getAttribute('aria-checked') !== 'true';
+                    await api('/api/push/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ motion: on }) });
+                    toast(on ? 'Notifikasi gerakan dinyalakan' : 'Notifikasi gerakan dimatikan');
+                    loadPush();
+                } else {
+                    const r = await api('/api/push/test', { method: 'POST' });
+                    toast(r.sent ? `Notifikasi tes dikirim ke ${r.sent} HP` : 'Belum ada HP terdaftar. Buka aplikasi Liliya di HP dulu.');
+                }
+            } catch (err) { toast(err.message); }
+            b.disabled = false;
+        });
+
         const backupEl = document.getElementById('cctv-backup');
         const DRIVE_WARN_BYTES = 200 * 1024 ** 3;
 
@@ -744,7 +775,7 @@ const BudiHome = (() => {
             } else {
                 loadRecordings(dateRow.querySelector('.active')?.dataset.date);
             }
-            if (initialized) loadBackup();
+            if (initialized) { loadBackup(); loadPush(); }
         }
 
         function hide() {

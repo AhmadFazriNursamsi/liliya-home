@@ -9,7 +9,8 @@ from urllib.parse import quote
 from aiohttp import web
 
 COOKIE_NAME = "budi_session"
-PUBLIC_PATHS = ("/login", "/logout", "/static/", "/favicon.ico")
+# /push/snap/: gambar notifikasi FCM, diakses lewat URL acak sekali pakai (lihat core/push.py)
+PUBLIC_PATHS = ("/login", "/logout", "/static/", "/favicon.ico", "/push/snap/")
 def _redirect(location: str) -> web.Response:
     return web.Response(status=302, headers={"Location": location, "Cache-Control": "no-store"})
 

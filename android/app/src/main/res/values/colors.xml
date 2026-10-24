@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Warna aksen notifikasi (peach logo Liliya) -->
+    <color name="liliya_peach">#F7996A</color>
+</resources>
