@@ -16,7 +16,7 @@ class TTSEngine:
         self.pitch = self.config.get("pitch", "+0Hz")
         self.base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         self.sounds_dir = os.path.join(self.base_dir, "sounds")
-        self.filler_files = glob.glob(os.path.join(self.sounds_dir, "*.mp3"))
+        self.filler_files = [f for f in glob.glob(os.path.join(self.sounds_dir, "*.mp3")) if not os.path.basename(f).lower().startswith("adzan")]
 
         # Pastikan DAC hardware selalu terbuka dan unmuted sejak inisialisasi
         auto_unmute_hardware_audio()
@@ -91,7 +91,7 @@ class TTSEngine:
     def play_filler(self):
         """Memutar feedback jeda instan ('Sebentar ya...', 'Tunggu sebentar...')."""
         if not self.filler_files:
-            self.filler_files = glob.glob(os.path.join(self.sounds_dir, "*.mp3"))
+            self.filler_files = [f for f in glob.glob(os.path.join(self.sounds_dir, "*.mp3")) if not os.path.basename(f).lower().startswith("adzan")]
         if self.filler_files:
             chosen = random.choice(self.filler_files)
             print(f"[TTS] ⏳ Respon Jeda Instan: {os.path.basename(chosen)}")

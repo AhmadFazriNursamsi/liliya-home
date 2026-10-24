@@ -9,3 +9,6 @@ __pycache__/
 .env
 config.yaml
 data/router_devices.json
+config.yaml.bak*
+data/*.bak-*
+*.deb

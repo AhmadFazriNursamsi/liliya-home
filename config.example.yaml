@@ -58,3 +58,13 @@ skills:
   default_city: "Jakarta"
   default_volume: 80
   media_player: "mpv"
+
+tuya:
+  # Integrasi Tuya / BARDI Bluetooth Gateway & Smart Devices
+  enabled: true
+  api_region: "us"       # us (Western America / Indonesia), eu, cn, in
+  api_key: "MASUKKAN_ACCESS_ID_TUYA_DEV"
+  api_secret: "MASUKKAN_ACCESS_SECRET_TUYA_DEV"
+  devices:
+    lampu_ruang_tamu: "DEVICE_ID_LAMPU_HISTAR"
+

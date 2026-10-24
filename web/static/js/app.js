@@ -1,13 +1,10 @@
 // =========================================================
-// STB Smart Voice Assistant & Smart Display
-// Universal HTML5 MediaRecorder Audio Stream (Mac/iOS/Android/Windows)
+// STB Smart Voice Assistant & Smart Display (BUDI)
+// Universal HTML5 SpeechRecognition & WebUI Controller
 // =========================================================
 
 let ws = null;
 let reconnectTimer = null;
-let smartHomeDevices = {};
-let mediaRecorder = null;
-let audioChunks = [];
 let isRecording = false;
 
 // DOM Elements
@@ -28,8 +25,10 @@ const textCmdForm = document.getElementById('text-cmd-form');
 const textInput = document.getElementById('text-input');
 const btnVoiceInput = document.getElementById('btn-voice-input');
 const btnFullscreen = document.getElementById('btn-fullscreen');
-const btnQuickLights = document.getElementById('btn-quick-lights');
-const btnQuickSensors = document.getElementById('btn-quick-sensors');
+const btnQuickMusic = document.getElementById('btn-quick-music');
+const btnQuickPrayer = document.getElementById('btn-quick-prayer');
+const btnQuickWeather = document.getElementById('btn-quick-weather');
+const btnQuickNews = document.getElementById('btn-quick-news');
 
 // 1. Clock & Date Display
 const DAYS_ID = ["Minggu", "Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu"];
@@ -59,9 +58,9 @@ function setOrbState(state) {
     document.body.className = `theme-dark state-${state}`;
     if (statusText) {
         const labels = {
-            "idle": "Standby (Klik 'Bicara' untuk memberi perintah)",
-            "listening": "🔴 Sedang Merekam Suara Anda...",
-            "thinking": "Sedang Berpikir & Memproses...",
+            "idle": "Standby",
+            "listening": "🔴 Merekam...",
+            "thinking": "Memproses...",
             "speaking": "Membacakan Respon..."
         };
         statusText.textContent = labels[state] || state;
@@ -69,79 +68,95 @@ function setOrbState(state) {
 }
 setOrbState("idle");
 
-// 3. Universal HTML5 MediaRecorder (Compatible with Mac Safari, Chrome, iPhone, Android)
-async function startAudioRecording() {
-    try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        audioChunks = [];
-        mediaRecorder = new MediaRecorder(stream);
+// 3. Real-Time Streaming Speech Recognition with Live Subtitles & Auto-Stop
+let recognition = null;
+let finalRecordedText = "";
 
-        mediaRecorder.ondataavailable = (e) => {
-            if (e.data.size > 0) {
-                audioChunks.push(e.data);
+function initSpeechEngine() {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (SpeechRecognition) {
+        recognition = new SpeechRecognition();
+        recognition.lang = 'id-ID';
+        recognition.continuous = false;
+        recognition.interimResults = true;
+
+        recognition.onstart = () => {
+            isRecording = true;
+            finalRecordedText = "";
+            setOrbState("listening");
+            if (btnVoiceInput) {
+                btnVoiceInput.innerHTML = '<i class="fa-solid fa-microphone-lines fa-fade"></i> <span>Merekam...</span>';
+                btnVoiceInput.style.background = 'linear-gradient(135deg, #ff0844, #ffb199)';
+                btnVoiceInput.style.color = '#fff';
+            }
+            if (userSpeech) {
+                userSpeech.style.display = "flex";
+                userSpeech.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }
+            if (userSpeechText) userSpeechText.textContent = "Mendengarkan ucapan Anda...";
+        };
+
+        recognition.onresult = (event) => {
+            let liveText = "";
+            for (let i = 0; i < event.results.length; ++i) {
+                liveText += event.results[i][0].transcript;
+            }
+            if (liveText) {
+                finalRecordedText = liveText;
+                if (userSpeech) userSpeech.style.display = "flex";
+                if (userSpeechText) userSpeechText.textContent = liveText;
             }
         };
 
-        mediaRecorder.onstop = async () => {
-            stream.getTracks().forEach(track => track.stop());
-            const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
-            const reader = new FileReader();
-            reader.readAsDataURL(audioBlob);
-            reader.onloadend = () => {
-                const base64Audio = reader.result.split(',')[1];
-                if (ws && ws.readyState === WebSocket.OPEN) {
-                    setOrbState("thinking");
-                    if (assistantSpeechText) assistantSpeechText.textContent = "Mentranskripsi suara Anda...";
-                    ws.send(JSON.stringify({
-                        type: "audio_command",
-                        audio: base64Audio
-                    }));
-                }
-            };
+        recognition.onerror = (event) => {
+            console.warn("[Speech Error]", event.error);
+            isRecording = false;
+            setOrbState("idle");
+            resetVoiceButton();
         };
 
-        mediaRecorder.start();
-        isRecording = true;
-        setOrbState("listening");
-
-        if (btnVoiceInput) {
-            btnVoiceInput.innerHTML = '<i class="fa-solid fa-stop"></i> Selesai';
-            btnVoiceInput.style.background = 'linear-gradient(135deg, #ff0844, #ffb199)';
-            btnVoiceInput.style.color = '#fff';
-        }
-        if (userSpeech) userSpeech.style.display = "flex";
-        if (userSpeechText) userSpeechText.textContent = "Silakan bicara ke mikrofon sekarang...";
-
-    } catch (err) {
-        console.warn("[Mic Info]", err);
-        if (userSpeech) userSpeech.style.display = "flex";
-        if (userSpeechText) userSpeechText.textContent = "Mic browser terkunci: Silakan ketik perintah di bawah (contoh: nyalakan lampu)";
-        if (textInput) {
-            textInput.focus();
-            textInput.placeholder = "Ketik perintah di sini lalu tekan Enter...";
-        }
-        isRecording = false;
-        setOrbState("idle");
+        recognition.onend = () => {
+            isRecording = false;
+            resetVoiceButton();
+            if (finalRecordedText && finalRecordedText.trim()) {
+                console.log(`[Voice Complete] 🗣️ Perintah: "${finalRecordedText}"`);
+                sendCommand(finalRecordedText.trim());
+            } else {
+                setOrbState("idle");
+            }
+        };
     }
 }
+initSpeechEngine();
 
-function stopAudioRecording() {
-    if (mediaRecorder && isRecording) {
-        mediaRecorder.stop();
-        isRecording = false;
-        if (btnVoiceInput) {
-            btnVoiceInput.innerHTML = '<i class="fa-solid fa-microphone"></i> Bicara';
-            btnVoiceInput.style.background = 'linear-gradient(135deg, #00f2fe, #4facfe)';
-            btnVoiceInput.style.color = '#000';
-        }
+function resetVoiceButton() {
+    if (btnVoiceInput) {
+        btnVoiceInput.innerHTML = '<i class="fa-solid fa-microphone"></i> <span>Bicara</span>';
+        btnVoiceInput.style.background = 'linear-gradient(135deg, #00f2fe, #4facfe)';
+        btnVoiceInput.style.color = '#000';
     }
 }
 
 function toggleBrowserMic() {
+    if (!recognition) {
+        initSpeechEngine();
+    }
     if (isRecording) {
-        stopAudioRecording();
+        try { recognition.stop(); } catch (e) {}
+        isRecording = false;
+        resetVoiceButton();
     } else {
-        startAudioRecording();
+        try {
+            recognition.start();
+        } catch (e) {
+            console.warn("Recognition start error:", e);
+            try {
+                recognition.abort();
+                setTimeout(() => {
+                    try { recognition.start(); } catch (err) {}
+                }, 100);
+            } catch (err) {}
+        }
     }
 }
 
@@ -154,7 +169,7 @@ function connectWebSocket() {
     ws = new WebSocket(wsUrl);
 
     ws.onopen = () => {
-        console.log("[WS] ✅ Terhubung ke STB Assistant & Smart Home Realtime DB.");
+        console.log("[WS] ✅ Terhubung ke STB Assistant Server.");
         if (reconnectTimer) {
             clearInterval(reconnectTimer);
             reconnectTimer = null;
@@ -179,89 +194,49 @@ function connectWebSocket() {
     };
 }
 
-// 5. Smart Home Chip Controller
-function toggleDevice(deviceId) {
-    if (ws && ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({
-            type: "smart_home_toggle",
-            id: deviceId
-        }));
-    }
-}
-
-function updateDeviceChip(device) {
-    const chip = document.getElementById(`chip-${device.id}`);
-    if (!chip) return;
-
-    const isActive = device.state === "on";
-    const statusSpan = chip.querySelector('.chip-status');
-
-    if (device.type === "light") {
-        if (isActive) {
-            chip.classList.add('active');
-            if (statusSpan) statusSpan.textContent = "ON";
-        } else {
-            chip.classList.remove('active');
-            if (statusSpan) statusSpan.textContent = "OFF";
-        }
-    } else if (device.type === "ac") {
-        if (isActive) {
-            chip.classList.add('ac-active');
-            if (statusSpan) statusSpan.textContent = `${device.temperature || 24}°C`;
-        } else {
-            chip.classList.remove('ac-active');
-            if (statusSpan) statusSpan.textContent = "OFF";
-        }
-    } else if (device.type === "sensor_climate") {
-        const suhuVal = document.getElementById('chip-suhu-val');
-        if (suhuVal) suhuVal.textContent = `${device.temperature}°C`;
-    } else if (device.type === "sensor_contact") {
-        const pintuVal = document.getElementById('chip-pintu-val');
-        if (pintuVal) {
-            pintuVal.textContent = device.is_open ? "Terbuka" : "Aman";
-            if (device.is_open) {
-                pintuVal.classList.add('sensor-alert');
-            } else {
-                pintuVal.classList.remove('sensor-alert');
-            }
-        }
-    }
-}
-
-function syncAllDevices(devicesList) {
-    if (!Array.isArray(devicesList)) return;
-    devicesList.forEach(dev => {
-        smartHomeDevices[dev.id] = dev;
-        updateDeviceChip(dev);
-    });
-}
-
-// 6. Handle Incoming Events from STB
+// 5. Handle Incoming Events from STB
 function handleServerEvent(data) {
     const type = data.type;
 
     if (type === "state_change") {
         setOrbState(data.state);
         if (data.state === "listening") {
-            if (userSpeech) userSpeech.style.display = "flex";
+            if (userSpeech) {
+                userSpeech.style.display = "flex";
+                userSpeech.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }
             if (userSpeechText) userSpeechText.textContent = "Sedang mendengarkan ucapan Anda...";
         }
     } else if (type === "user_voice_command") {
-        if (userSpeech) userSpeech.style.display = "flex";
+        if (userSpeech) {
+            userSpeech.style.display = "flex";
+            userSpeech.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
         if (userSpeechText) userSpeechText.textContent = data.text;
     } else if (type === "assistant_response") {
-        if (assistantSpeech) assistantSpeech.style.display = "flex";
-        if (assistantSpeechText) assistantSpeechText.textContent = data.text;
-    } else if (type === "smart_home_sync") {
-        if (data.devices) {
-            syncAllDevices(data.devices);
+        if (assistantSpeech) {
+            assistantSpeech.style.display = "flex";
+            assistantSpeech.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
         }
-    } else if (type === "smart_home_device_update") {
-        if (data.device) {
-            smartHomeDevices[data.device.id] = data.device;
-            updateDeviceChip(data.device);
+        if (assistantSpeechText) assistantSpeechText.textContent = data.text;
+    } else if (type === "open_url") {
+        if (data.url) {
+            console.log(`[Redirect] 🚀 Membuka URL di browser: ${data.url}`);
+            try {
+                window.open(data.url, '_blank');
+            } catch (e) {
+                console.warn("[Redirect Error]", e);
+            }
+            if (assistantSpeech) {
+                assistantSpeech.style.display = "flex";
+                assistantSpeech.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }
+            if (assistantSpeechText) {
+                assistantSpeechText.innerHTML = `${assistantSpeechText.textContent || 'Membuka YouTube...'} <br><a href="${data.url}" target="_blank" class="yt-mobile-btn"><i class="fa-brands fa-youtube"></i> Buka di YouTube</a>`;
+            }
         }
     } else if (type === "now_playing") {
+        const hasMusic = data.title && data.title !== "Tidak ada musik diputar" && data.title.trim() !== "";
         if (mediaTitle) {
             mediaTitle.textContent = data.title || "Tidak ada musik diputar";
         }
@@ -269,7 +244,13 @@ function handleServerEvent(data) {
             mediaArtist.textContent = data.artist || "STB Media Engine";
         }
         if (mediaCard) {
-            mediaCard.style.opacity = data.title ? "1" : "0.7";
+            if (hasMusic) {
+                mediaCard.classList.add('is-playing');
+                mediaCard.style.opacity = "1";
+            } else {
+                mediaCard.classList.remove('is-playing');
+                mediaCard.style.opacity = "0.7";
+            }
         }
     } else if (type === "usage_stat") {
         const tokEl = document.getElementById('token-count-val');
@@ -286,11 +267,14 @@ function handleServerEvent(data) {
     }
 }
 
-// 7. Send Commands to STB
+// 6. Send Commands to STB
 function sendCommand(text) {
     if (!text || !text.trim()) return;
     if (ws && ws.readyState === WebSocket.OPEN) {
-        if (userSpeech) userSpeech.style.display = "flex";
+        if (userSpeech) {
+            userSpeech.style.display = "flex";
+            userSpeech.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
         if (userSpeechText) userSpeechText.textContent = text;
         if (assistantSpeechText) assistantSpeechText.textContent = "Memproses permintaan...";
         setOrbState("thinking");
@@ -302,10 +286,8 @@ function sendCommand(text) {
     }
 }
 
-// 8. Event Listeners
+// 7. Event Listeners
 if (orbWrapper) {
-    orbWrapper.style.cursor = "pointer";
-    orbWrapper.title = "Klik untuk berbicara via Mic Mac / HP";
     orbWrapper.addEventListener('click', toggleBrowserMic);
 }
 
@@ -331,15 +313,27 @@ if (btnStopMusic) {
     });
 }
 
-if (btnQuickLights) {
-    btnQuickLights.addEventListener('click', () => {
-        sendCommand("Nyalakan semua lampu");
+if (btnQuickMusic) {
+    btnQuickMusic.addEventListener('click', () => {
+        sendCommand("Putar musik santai");
     });
 }
 
-if (btnQuickSensors) {
-    btnQuickSensors.addEventListener('click', () => {
-        sendCommand("Cek status semua sensor");
+if (btnQuickPrayer) {
+    btnQuickPrayer.addEventListener('click', () => {
+        sendCommand("Jadwal sholat hari ini");
+    });
+}
+
+if (btnQuickWeather) {
+    btnQuickWeather.addEventListener('click', () => {
+        sendCommand("Bagaimana cuaca hari ini?");
+    });
+}
+
+if (btnQuickNews) {
+    btnQuickNews.addEventListener('click', () => {
+        sendCommand("Ada berita menarik apa hari ini?");
     });
 }
 

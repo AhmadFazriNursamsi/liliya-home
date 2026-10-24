@@ -225,3 +225,35 @@ class MediaPlayerSkill:
 
         threading.Thread(target=_fetch_and_play, daemon=True).start()
         return f"Baik, memutar {query} untuk Anda."
+
+    def play_file(self, file_path: str, title: str = "Audio") -> str:
+        """Memutar file audio lokal (misal: adzan, nada alarm, file musik lokal)."""
+        self.stop_music()
+        title_display = title if title else os.path.basename(file_path)
+        self.current_title = title_display
+        
+        if self.event_bridge:
+            self.event_bridge.broadcast_now_playing(f"⏳ Memuat: {title_display}")
+
+        def _play():
+            self._wait_for_tts_finish()
+            auto_unmute_hardware_audio()
+            with self.lock:
+                self.is_paused = False
+                cmd = self._get_player_cmd(file_path)
+                self.current_process = subprocess.Popen(cmd)
+                print(f"[MediaPlayer] 🔊 Memutar File Audio: {title_display}")
+                if self.event_bridge:
+                    self.event_bridge.broadcast_now_playing(title_display)
+                    
+            # Tunggu proses selesai
+            if self.current_process:
+                self.current_process.wait()
+                with self.lock:
+                    if self.current_title == title_display:
+                        self.current_title = ""
+                        if self.event_bridge:
+                            self.event_bridge.broadcast_now_playing("")
+
+        threading.Thread(target=_play, daemon=True).start()
+        return f"Memutar {title_display} sekarang."

@@ -11,6 +11,7 @@ class FirebaseRealtimeBridge:
         self.auth_secret = self.config.get("auth_secret", "")
         self.sync_path = self.config.get("sync_path", "smart_home/devices").strip("/")
         self.db = smart_home_db
+        self._recent_local_pushes = {}
         
         self.thread = None
         self.is_running = False
@@ -27,6 +28,8 @@ class FirebaseRealtimeBridge:
         """Mengirim pembaruan status dari STB (suara / klik layar) ke Firebase Cloud."""
         if not self.enabled or not self.database_url or "your-project" in self.database_url:
             return
+
+        self._recent_local_pushes[device_id] = time.time()
 
         def _send():
             try:
@@ -101,14 +104,30 @@ class FirebaseRealtimeBridge:
             parts = path.split("/")
             device_id = parts[0]
             
+            # Abaikan pantulan / echo dari perintah lokal yang baru saja dikirim (< 5 detik)
+            last_push = self._recent_local_pushes.get(device_id, 0)
+            if (time.time() - last_push) < 5.0:
+                return
+
+            local_dev = self.db.get_device_by_id(device_id)
+            if not local_dev:
+                return
+
             if len(parts) == 1:
-                # Update objek dictionary device utuh (contoh path: "lampu_ruang_tamu", data: {"state": "on"})
+                # Update objek dictionary device utuh (contoh: data={"state": "on", ...})
                 if isinstance(data, dict):
+                    cloud_ts = data.get("last_updated", 0)
+                    if cloud_ts and cloud_ts <= local_dev.get("last_updated", 0):
+                        # Data snapshot usang dari cloud, abaikan agar tidak override status lokal
+                        return
                     self.db.update_device_state(device_id, data, sync_to_cloud=False)
                     print(f"[FirebaseCloud] 📥 Kontrol jarak jauh diterima untuk '{device_id}': {data}")
             elif len(parts) >= 2:
                 # Update properti tunggal (contoh path: "lampu_ruang_tamu/state", data: "on")
                 prop_name = parts[1]
+                # Jika properti sudah sama persis dengan yang ada di lokal, jangan eksekusi ulang
+                if local_dev.get(prop_name) == data:
+                    return
                 self.db.update_device_state(device_id, {prop_name: data}, sync_to_cloud=False)
                 print(f"[FirebaseCloud] 📥 Kontrol jarak jauh diterima: '{device_id}.{prop_name}' = {data}")
         except Exception as e:
