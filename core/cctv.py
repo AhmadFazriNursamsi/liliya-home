@@ -14,6 +14,12 @@ from aiohttp import web
 SEGMENT_RE = re.compile(r"^(\d{8})_(\d{6})\.mp4$")
 # File statis player go2rtc yang boleh diambil lewat BUDI (API konfigurasi go2rtc TIDAK diekspos)
 PLAYER_FILES = {"video-stream.js", "video-rtc.js"}
+# Event ONVIF yang dicatat sebagai gerakan (Tapo: deteksi gerakan & deteksi orang)
+MOTION_ITEMS = {"IsMotion": "motion", "IsPeople": "people"}
+MOTION_MAX_SECONDS = 600   # gerakan yang tidak pernah "selesai" dipotong per 10 menit
+MOTION_MERGE_GAP = 5       # kejadian yang berjarak < 5 detik digabung jadi satu tanda
+PULL_BODY = ('<PullMessages xmlns="http://www.onvif.org/ver10/events/wsdl"><Timeout>PT30S</Timeout>'
+             '<MessageLimit>20</MessageLimit></PullMessages>')
 
 
 class OnvifPTZ:
@@ -38,9 +44,11 @@ class OnvifPTZ:
             "</UsernameToken></Security></s:Header>"
         )
 
+    def envelope(self, body: str) -> str:
+        return f'<s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope">{self._security_header()}<s:Body>{body}</s:Body></s:Envelope>'
+
     def _call(self, body: str) -> str:
-        envelope = f'<s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope">{self._security_header()}<s:Body>{body}</s:Body></s:Envelope>'
-        r = requests.post(self.url, data=envelope, headers={"Content-Type": "application/soap+xml"}, timeout=5)
+        r = requests.post(self.url, data=self.envelope(body), headers={"Content-Type": "application/soap+xml"}, timeout=5)
         r.raise_for_status()
         return r.text
 
@@ -87,6 +95,14 @@ class CCTVManager:
         self.allowed_streams = {s for c in self.cameras.values() for s in (c["live_stream"], c["hd_stream"])}
         self._player_cache = {}
         self._session = None
+        # Catatan gerakan: {recordings_dir}/.motion/{cam}/YYYY-MM-DD.jsonl (folder tersembunyi,
+        # jadi tidak ikut tersentuh cctv-cleanup / cctv-upload)
+        self.motion_enabled = self.enabled and cfg.get("motion_events", True)
+        self.motion_dir = os.path.join(self.recordings_dir, ".motion")
+        self.motion_keep_days = int(cfg.get("retention_days", 3)) + 1
+        self._motion_active = {}   # cam_id -> {kind: start_ts}
+        self._motion_tasks = []
+        self._motion_pruned = ""
         if self.enabled:
             print(f"[CCTV] 📹 {len(self.cameras)} kamera aktif, rekaman di {self.recordings_dir}")
 
@@ -99,6 +115,148 @@ class CCTVManager:
         app.router.add_get("/cctv/rec/{cam}/{file}", self.handle_recording_file)
         app.router.add_get("/cctv/live/api/ws", self.handle_live_ws)
         app.router.add_get("/cctv/live/{file}", self.handle_player_file)
+        app.on_startup.append(self._start_motion)
+        app.on_cleanup.append(self._stop_motion)
+
+    # ---------- Deteksi gerakan (event ONVIF dari kamera, tanpa analisis video di STB) ----------
+    async def _start_motion(self, app):
+        if not self.motion_enabled:
+            return
+        for cam_id, onvif in self.ptz.items():
+            self._motion_tasks.append(asyncio.ensure_future(self._motion_watch(cam_id, onvif)))
+
+    async def _stop_motion(self, app):
+        for t in self._motion_tasks:
+            t.cancel()
+        now = time.time()
+        for cam_id in list(self._motion_active):
+            self._close_motion(cam_id, now)
+
+    async def _onvif_post(self, onvif: OnvifPTZ, url: str, body: str, timeout: float = 10) -> str:
+        session = await self._http()
+        async with session.post(url, data=onvif.envelope(body), headers={"Content-Type": "application/soap+xml"},
+                                timeout=aiohttp.ClientTimeout(total=timeout)) as r:
+            text = await r.text()
+            if r.status != 200:
+                raise RuntimeError(f"HTTP {r.status}")
+            return text
+
+    async def _motion_watch(self, cam_id: str, onvif: OnvifPTZ):
+        address, renew_at, backoff, failing = None, 0, 5, False
+        while True:
+            try:
+                if address is None:
+                    xml = await self._onvif_post(onvif, onvif.url,
+                        '<CreatePullPointSubscription xmlns="http://www.onvif.org/ver10/events/wsdl">'
+                        '<InitialTerminationTime>PT600S</InitialTerminationTime></CreatePullPointSubscription>')
+                    m = re.search(r"Address>\s*([^<\s]+)", xml)
+                    if not m:
+                        raise RuntimeError("alamat PullPoint tidak ditemukan")
+                    address, renew_at = m.group(1), time.time() + 300
+                    print(f"[CCTV] 👀 Deteksi gerakan '{cam_id}' aktif")
+                elif time.time() > renew_at:
+                    await self._onvif_post(onvif, address,
+                        '<Renew xmlns="http://docs.oasis-open.org/wsn/b-2"><TerminationTime>PT600S</TerminationTime></Renew>')
+                    renew_at = time.time() + 300
+                xml = await self._onvif_post(onvif, address, PULL_BODY, timeout=45)
+                self._handle_motion_xml(cam_id, xml)
+                self._split_long_motion(cam_id)
+                backoff, failing = 5, False
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                if not failing:
+                    print(f"[CCTV] Event gerakan '{cam_id}' terputus: {e!r}, mencoba lagi...")
+                failing, address = True, None
+                self._close_motion(cam_id, time.time())
+                await asyncio.sleep(backoff)
+                backoff = min(backoff * 2, 120)
+
+    def _handle_motion_xml(self, cam_id: str, xml: str):
+        now = time.time()
+        for msg in re.findall(r"NotificationMessage>(.*?)</[\w-]*:?NotificationMessage>", xml, re.S):
+            data = re.search(r"Data>(.*?)</[\w-]*:?Data>", msg, re.S)
+            for tag in re.findall(r"<[\w-]*:?SimpleItem\b[^>]*>", data.group(1) if data else ""):
+                name = re.search(r'Name="(\w+)"', tag)
+                value = re.search(r'Value="(\w+)"', tag)
+                kind = MOTION_ITEMS.get(name.group(1)) if name else None
+                if kind and value:
+                    self._set_motion(cam_id, kind, value.group(1).lower() == "true", now)
+
+    def _set_motion(self, cam_id: str, kind: str, active: bool, now: float):
+        current = self._motion_active.setdefault(cam_id, {})
+        if active and kind not in current:
+            current[kind] = now
+        elif not active and kind in current:
+            self._write_motion(cam_id, kind, current.pop(kind), now)
+
+    def _split_long_motion(self, cam_id: str):
+        now = time.time()
+        current = self._motion_active.get(cam_id, {})
+        for kind, start in list(current.items()):
+            if now - start > MOTION_MAX_SECONDS:
+                self._write_motion(cam_id, kind, start, now)
+                current[kind] = now
+
+    def _close_motion(self, cam_id: str, now: float):
+        for kind, start in list(self._motion_active.pop(cam_id, {}).items()):
+            self._write_motion(cam_id, kind, start, now)
+
+    def _write_motion(self, cam_id: str, kind: str, start: float, end: float):
+        day = datetime.datetime.fromtimestamp(start).strftime("%Y-%m-%d")
+        folder = os.path.join(self.motion_dir, cam_id)
+        try:
+            os.makedirs(folder, exist_ok=True)
+            with open(os.path.join(folder, day + ".jsonl"), "a") as f:
+                f.write(json.dumps({"s": int(start), "e": max(int(end), int(start) + 1), "k": kind}) + "\n")
+            if self._motion_pruned != day:
+                self._motion_pruned = day
+                limit = (datetime.date.today() - datetime.timedelta(days=self.motion_keep_days)).isoformat()
+                for name in os.listdir(folder):
+                    if name.endswith(".jsonl") and name[:10] < limit:
+                        os.remove(os.path.join(folder, name))
+        except OSError as e:
+            print(f"[CCTV] Gagal menyimpan catatan gerakan: {e}")
+
+    def _read_motion(self, cam_id: str, date: str):
+        """Kejadian gerakan pada tanggal itu (+ hari sebelumnya untuk yang melewati tengah malam)."""
+        events = []
+        try:
+            day = datetime.date.fromisoformat(date)
+        except ValueError:
+            return events
+        for d in (day - datetime.timedelta(days=1), day):
+            try:
+                with open(os.path.join(self.motion_dir, cam_id, d.isoformat() + ".jsonl")) as f:
+                    for line in f:
+                        try:
+                            ev = json.loads(line)
+                            events.append((int(ev["s"]), int(ev["e"]), ev.get("k") == "people"))
+                        except (ValueError, KeyError, TypeError):
+                            continue
+            except OSError:
+                continue
+        now = int(time.time())
+        for kind, start in self._motion_active.get(cam_id, {}).items():
+            events.append((int(start), now, kind == "people"))
+        # Gabungkan gerakan & orang yang bertumpuk / berdekatan menjadi satu tanda
+        merged = []
+        for s, e, people in sorted(events):
+            if merged and s <= merged[-1][1] + MOTION_MERGE_GAP:
+                merged[-1][1] = max(merged[-1][1], e)
+                merged[-1][2] = merged[-1][2] or people
+            else:
+                merged.append([s, e, people])
+        return merged
+
+    @staticmethod
+    def _attach_motion(segments, events):
+        for seg in segments:
+            start, end = seg["start_ts"], seg["end_ts"]
+            seg["motion"] = [
+                {"t": max(0, s - start), "d": max(1, min(e, end) - max(s, start)), "people": people}
+                for s, e, people in events if s < end and e > start
+            ]
 
     def _camera(self, request):
         cam = self.cameras.get(request.match_info.get("cam", ""))
@@ -170,11 +328,15 @@ class CCTVManager:
         segments = await asyncio.get_running_loop().run_in_executor(None, self._list_segments, cam["id"])
         dates = sorted({s["date"] for s in segments}, reverse=True)
         date = request.query.get("date") or (dates[0] if dates else "")
+        segments = [s for s in segments if s["date"] == date]
+        events = await asyncio.get_running_loop().run_in_executor(None, self._read_motion, cam["id"], date) if date else []
+        self._attach_motion(segments, events)
         return web.json_response({
             "camera": cam["id"],
             "dates": dates,
             "date": date,
-            "segments": [s for s in segments if s["date"] == date],
+            "motion_enabled": cam["id"] in self.ptz and self.motion_enabled,
+            "segments": segments,
         })
 
     async def handle_recording_file(self, request):

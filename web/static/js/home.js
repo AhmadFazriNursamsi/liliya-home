@@ -445,6 +445,8 @@ const BudiHome = (() => {
         let currentFile = null;
         let playerLoaded = null;
         let liveEl = null;
+        let motionOnly = false;
+        let motionEnabled = false;
 
         const stage = document.getElementById('cctv-stage');
         const badge = document.getElementById('cctv-badge');
@@ -456,6 +458,14 @@ const BudiHome = (() => {
         const btnLive = document.getElementById('btn-cctv-live');
         const btnQuality = document.getElementById('btn-cctv-quality');
         const btnSound = document.getElementById('btn-cctv-sound');
+        const motionTools = document.getElementById('cctv-motion-tools');
+        const motionSummary = document.getElementById('cctv-motion-summary');
+        const btnMotion = document.getElementById('btn-cctv-motion');
+
+        const pad2 = n => String(n).padStart(2, '0');
+        const fmtClock = ts => { const d = new Date(ts * 1000); return `${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`; };
+        const fmtOffset = s => `${pad2(Math.floor(s / 60))}:${pad2(Math.floor(s % 60))}`;
+        const hasMotion = s => (s.motion || []).length > 0;
 
         // Live view dimulai tanpa suara (seperti aplikasi Tapo) agar tidak terjadi feedback/denging
         // saat HP berada di dekat kamera. Suara bisa dinyalakan lewat tombol.
@@ -534,9 +544,13 @@ const BudiHome = (() => {
             v.src = `/cctv/rec/${encodeURIComponent(cam.id)}/${encodeURIComponent(file)}`;
             const playNext = () => {
                 const idx = segments.findIndex(s => s.file === file);
-                const next = segments[idx + 1];
+                const next = segments.slice(idx + 1).find(s => !motionOnly || hasMotion(s));
                 if (next && !next.recording) playSegment(next.file);
             };
+            // Mode "Hanya gerakan": langsung lompat ke gerakan pertama di segmen ini
+            if (motionOnly && hasMotion(seg)) {
+                v.addEventListener('loadedmetadata', () => { v.currentTime = Math.max(0, seg.motion[0].t - 3); }, { once: true });
+            }
             v.addEventListener('ended', playNext);
             v.addEventListener('error', () => {
                 toast(`Rekaman ${seg.start.slice(0, 5)} tidak bisa diputar, lanjut ke berikutnya.`);
@@ -545,9 +559,43 @@ const BudiHome = (() => {
             stage.prepend(v);
             renderSegments();
             const end = new Date(seg.end_ts * 1000);
-            meta.innerHTML = `<span>Memutar <strong>${esc(seg.start.slice(0, 5))} – ${String(end.getHours()).padStart(2, '0')}:${String(end.getMinutes()).padStart(2, '0')}</strong> · ${(seg.size / 1048576).toFixed(0)} MB</span>
-                <a class="pill-btn" href="${v.src}?download=1" download><i class="fa-solid fa-download"></i> Unduh</a>`;
+            meta.innerHTML = `<div class="playback-row"><span>Memutar <strong>${esc(seg.start.slice(0, 5))} – ${String(end.getHours()).padStart(2, '0')}:${String(end.getMinutes()).padStart(2, '0')}</strong> · ${(seg.size / 1048576).toFixed(0)} MB</span>
+                <a class="pill-btn" href="${v.src}?download=1" download><i class="fa-solid fa-download"></i> Unduh</a></div>
+                ${renderMotionTrack(seg)}`;
             meta.hidden = false;
+
+            const track = meta.querySelector('.motion-track');
+            if (track) {
+                const cursor = track.querySelector('.motion-cursor');
+                const total = () => (isFinite(v.duration) && v.duration > 0 ? v.duration : Math.max(1, seg.end_ts - seg.start_ts));
+                v.addEventListener('timeupdate', () => { cursor.style.left = `${Math.min(100, v.currentTime / total() * 100)}%`; });
+                track.addEventListener('click', e => {
+                    if (e.target.closest('[data-seek]')) return;
+                    const r = track.getBoundingClientRect();
+                    v.currentTime = (e.clientX - r.left) / r.width * total();
+                });
+            }
+            meta.querySelectorAll('[data-seek]').forEach(b => b.addEventListener('click', () => {
+                v.currentTime = Math.max(0, Number(b.dataset.seek) - 3);
+                v.play().catch(() => {});
+            }));
+        }
+
+        // Garis waktu segmen dengan tanda oranye di detik terjadinya gerakan
+        function renderMotionTrack(seg) {
+            if (!motionEnabled) return '';
+            const events = seg.motion || [];
+            if (!events.length) return '<div class="motion-none"><i class="fa-regular fa-circle-check"></i> Tidak ada gerakan di rekaman ini</div>';
+            const total = Math.max(1, seg.end_ts - seg.start_ts);
+            const marks = events.map(m => `<button class="motion-mark ${m.people ? 'people' : ''}" data-seek="${m.t}"
+                style="left:${(m.t / total * 100).toFixed(2)}%;width:${(m.d / total * 100).toFixed(2)}%"
+                title="${fmtClock(seg.start_ts + m.t)}" aria-label="Gerakan pukul ${fmtClock(seg.start_ts + m.t)}"></button>`).join('');
+            const chips = events.map(m => `<button class="pill-btn motion-chip ${m.people ? 'people' : ''}" data-seek="${m.t}">
+                <i class="fa-solid ${m.people ? 'fa-person' : 'fa-person-running'}"></i>
+                <strong>${fmtClock(seg.start_ts + m.t)}</strong><span>menit ${fmtOffset(m.t)}${m.d > 2 ? ` · ${m.d} dtk` : ''}</span></button>`).join('');
+            return `<div class="motion-track" title="Ketuk untuk lompat"><div class="motion-cursor"></div>${marks}</div>
+                <div class="motion-head"><i class="fa-solid fa-person-running"></i> ${events.length} gerakan terdeteksi · ketuk untuk lompat</div>
+                <div class="pill-row motion-list">${chips}</div>`;
         }
 
         const backupEl = document.getElementById('cctv-backup');
@@ -591,6 +639,7 @@ const BudiHome = (() => {
             try {
                 const data = await api(`/api/cctv/${encodeURIComponent(cam.id)}/recordings${date ? '?date=' + encodeURIComponent(date) : ''}`);
                 segments = data.segments || [];
+                motionEnabled = !!data.motion_enabled;
                 dateRow.innerHTML = (data.dates || []).map(dt =>
                     `<button class="pill-btn ${dt === data.date ? 'active' : ''}" data-date="${esc(dt)}">${esc(dateLabel(dt))}</button>`).join('')
                     || '<span class="sub">Belum ada rekaman.</span>';
@@ -601,12 +650,22 @@ const BudiHome = (() => {
         }
 
         function renderSegments() {
+            const withMotion = segments.filter(hasMotion);
+            motionTools.hidden = !motionEnabled || !segments.length;
+            const totalEvents = withMotion.reduce((n, s) => n + s.motion.length, 0);
+            motionSummary.textContent = totalEvents ? `${totalEvents} gerakan di ${withMotion.length} rekaman` : 'Belum ada gerakan hari ini';
+            btnMotion.classList.toggle('active', motionOnly);
             if (!segments.length) {
                 hoursBox.innerHTML = '<div class="empty-note">Belum ada rekaman untuk tanggal ini.</div>';
                 return;
             }
+            const shown = motionOnly && motionEnabled ? withMotion : segments;
+            if (!shown.length) {
+                hoursBox.innerHTML = '<div class="empty-note">Tidak ada gerakan terdeteksi pada tanggal ini.</div>';
+                return;
+            }
             const byHour = new Map();
-            segments.forEach(s => {
+            shown.forEach(s => {
                 const h = s.start.slice(0, 2);
                 if (!byHour.has(h)) byHour.set(h, []);
                 byHour.get(h).push(s);
@@ -614,7 +673,7 @@ const BudiHome = (() => {
             hoursBox.innerHTML = [...byHour.entries()].sort((a, b) => b[0].localeCompare(a[0])).map(([h, list]) => `
                 <div class="segment-hour"><span class="hour-label">${h}:00</span>
                     <div class="pill-row">${list.map(s => `<button class="pill-btn segment-btn ${s.file === currentFile ? 'active' : ''} ${s.recording ? 'recording' : ''}" data-file="${esc(s.file)}" ${s.recording ? 'disabled title="Sedang direkam"' : ''}>
-                        ${s.recording ? '<i class="fa-solid fa-circle" style="color:var(--accent-red);font-size:.55rem"></i>' : ''}${esc(s.start.slice(0, 5))}</button>`).join('')}
+                        ${s.recording ? '<i class="fa-solid fa-circle" style="color:var(--accent-red);font-size:.55rem"></i>' : ''}${esc(s.start.slice(0, 5))}${hasMotion(s) ? `<span class="motion-count ${s.motion.some(m => m.people) ? 'people' : ''}" title="${s.motion.length} gerakan"><i class="fa-solid fa-person-running"></i>${s.motion.length}</span>` : ''}</button>`).join('')}
                     </div></div>`).join('');
         }
 
@@ -645,6 +704,7 @@ const BudiHome = (() => {
         camRow.addEventListener('click', e => { const b = e.target.closest('[data-cam]'); if (b) selectCamera(b.dataset.cam); });
         dateRow.addEventListener('click', e => { const b = e.target.closest('[data-date]'); if (b) loadRecordings(b.dataset.date); });
         hoursBox.addEventListener('click', e => { const b = e.target.closest('[data-file]'); if (b && !b.disabled) playSegment(b.dataset.file); });
+        btnMotion.addEventListener('click', () => { motionOnly = !motionOnly; renderSegments(); });
         ptzPad.addEventListener('click', e => { const b = e.target.closest('[data-dir]'); if (b) ptz(b.dataset.dir); });
         btnLive.addEventListener('click', () => { meta.hidden = true; startLive(); });
         btnQuality.addEventListener('click', () => { quality = quality === 'hd' ? 'sd' : 'hd'; startLive(); });

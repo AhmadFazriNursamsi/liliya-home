@@ -362,6 +362,43 @@
 }
 
 .playback-meta strong { color: var(--text); }
+.playback-meta { flex-direction: column; align-items: stretch; }
+.playback-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+
+/* ---------- Tanda gerakan pada rekaman ---------- */
+.motion-tools { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 0.82rem; color: var(--text-muted); }
+.motion-track {
+    position: relative;
+    height: 26px;
+    border-radius: 8px;
+    background: var(--surface-2, var(--peach-soft));
+    border: 1px solid var(--border);
+    overflow: hidden;
+    cursor: pointer;
+}
+.motion-mark {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    min-width: 5px;
+    border: 0;
+    padding: 0;
+    background: var(--peach-strong);
+    cursor: pointer;
+}
+.motion-mark.people { background: var(--red); }
+.motion-cursor { position: absolute; top: 0; bottom: 0; left: 0; width: 2px; background: var(--brown); pointer-events: none; z-index: 1; }
+.motion-head, .motion-none { font-size: 0.8rem; color: var(--text-muted); }
+.motion-head i { color: var(--peach-strong); }
+.motion-list { max-height: 132px; overflow-y: auto; }
+.motion-chip { gap: 6px; min-height: 34px; padding: 5px 10px; font-size: 0.8rem; }
+.motion-chip strong { font-family: var(--font-mono); }
+.motion-chip span { color: var(--text-muted); }
+.motion-chip i { color: var(--peach-strong); }
+.motion-chip.people i { color: var(--red); }
+.motion-count { display: inline-flex; align-items: center; gap: 3px; margin-left: 6px; font-size: 0.7rem; font-weight: 700; color: var(--peach-strong); }
+.motion-count i { color: inherit; font-size: 0.68rem; }
+.motion-count.people { color: var(--red); }
 
 .backup-note {
     padding: 10px 12px;
