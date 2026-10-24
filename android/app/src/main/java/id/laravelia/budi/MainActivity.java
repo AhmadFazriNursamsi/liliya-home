@@ -185,13 +185,29 @@ public class MainActivity extends Activity {
         }
     }
 
+    private static final int[] PUSH_RETRY_SEC = {3, 10, 30, 60, 120};
+    private int pushAttempt;
+    private boolean pushPending;
+
     private void initPush() {
+        if (pushPending) return;
         try {
             if (FirebaseApp.getApps(this).isEmpty() && FirebaseApp.initializeApp(this) == null) return;
+            pushPending = true;
             FirebaseMessaging.getInstance().getToken().addOnSuccessListener(token -> {
+                pushPending = false;
+                pushAttempt = 0;
                 getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString(LiliyaMessagingService.PREF_TOKEN, token).apply();
                 registerPushToken();
-            }).addOnFailureListener(e -> pushError("Token FCM gagal", e));
+            }).addOnFailureListener(e -> {
+                pushPending = false;
+                // SERVICE_NOT_AVAILABLE sering sementara (Layanan Google Play sibuk): coba ulang bertahap
+                if (pushAttempt < PUSH_RETRY_SEC.length && webView != null) {
+                    webView.postDelayed(this::initPush, PUSH_RETRY_SEC[pushAttempt++] * 1000L);
+                } else {
+                    pushError("Token FCM gagal", e);
+                }
+            });
         } catch (Exception e) {
             // APK dibangun tanpa google-services.json: notifikasi tidak tersedia, aplikasi tetap jalan
             pushError("Firebase tidak aktif", e);
@@ -215,10 +231,15 @@ public class MainActivity extends Activity {
         Throwable root = e;
         while (root.getCause() != null && root.getCause() != root) root = root.getCause();
         String detail = root.getClass().getSimpleName() + ": " + root.getMessage();
+        String hint = "SERVICE_NOT_AVAILABLE".equals(root.getMessage())
+                ? "
+
+Di HP Xiaomi/Redmi: Info apl Liliya → nyalakan Autostart, Penghemat baterai → Tanpa batasan, "
+                + "lalu tutup dan buka lagi aplikasi." : "";
         SharedPreferences sp = getSharedPreferences(PREFS, MODE_PRIVATE);
         if (detail.equals(sp.getString("push_error", ""))) return;
         sp.edit().putString("push_error", detail).apply();
-        runOnUiThread(() -> new AlertDialog.Builder(this).setTitle(title).setMessage(detail)
+        runOnUiThread(() -> new AlertDialog.Builder(this).setTitle(title).setMessage(detail + hint)
                 .setPositiveButton("OK", null).show());
     }
 
@@ -620,6 +641,11 @@ public class MainActivity extends Activity {
         super.onResume();
         webView.onResume();
         checkRouteChange();
+        // Belum dapat token (mis. gagal saat dibuka pertama): coba lagi tiap aplikasi dibuka kembali
+        if (getSharedPreferences(PREFS, MODE_PRIVATE).getString(LiliyaMessagingService.PREF_TOKEN, null) == null) {
+            pushAttempt = 0;
+            initPush();
+        }
     }
 
     @Override
