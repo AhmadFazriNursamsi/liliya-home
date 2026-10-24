@@ -191,10 +191,10 @@ public class MainActivity extends Activity {
             FirebaseMessaging.getInstance().getToken().addOnSuccessListener(token -> {
                 getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString(LiliyaMessagingService.PREF_TOKEN, token).apply();
                 registerPushToken();
-            }).addOnFailureListener(e -> pushStatus("Token FCM gagal: " + e.getMessage()));
+            }).addOnFailureListener(e -> pushError("Token FCM gagal", e));
         } catch (Exception e) {
             // APK dibangun tanpa google-services.json: notifikasi tidak tersedia, aplikasi tetap jalan
-            pushStatus("Firebase tidak aktif: " + e.getMessage());
+            pushError("Firebase tidak aktif", e);
         }
     }
 
@@ -208,6 +208,18 @@ public class MainActivity extends Activity {
                 + "body:JSON.stringify({token:" + JSONObject.quote(token) + ",device:" + JSONObject.quote(device) + "})})"
                 + ".then(function(r){BudiAndroid.pushResult(r.status);}).catch(function(e){BudiAndroid.pushResult(-1);});})()";
         runOnUiThread(() -> webView.evaluateJavascript(js, null));
+    }
+
+    /** Tampilkan penyebab asli (bukan pembungkus ExecutionException) dalam dialog yang bisa dibaca penuh. */
+    private void pushError(String title, Throwable e) {
+        Throwable root = e;
+        while (root.getCause() != null && root.getCause() != root) root = root.getCause();
+        String detail = root.getClass().getSimpleName() + ": " + root.getMessage();
+        SharedPreferences sp = getSharedPreferences(PREFS, MODE_PRIVATE);
+        if (detail.equals(sp.getString("push_error", ""))) return;
+        sp.edit().putString("push_error", detail).apply();
+        runOnUiThread(() -> new AlertDialog.Builder(this).setTitle(title).setMessage(detail)
+                .setPositiveButton("OK", null).show());
     }
 
     /** Status pendaftaran notifikasi: Toast hanya saat berubah (gagal / berhasil pertama kali). */
