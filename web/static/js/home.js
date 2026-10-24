@@ -801,7 +801,7 @@ const BudiHome = (() => {
                     <small>${o.rx_dbm != null ? `${o.rx_dbm} dBm` : 'tidak terbaca'}</small></div></div>
                 <div class="rt-stat"><i class="fa-solid fa-network-wired"></i>
                     <div><strong>${data.clients.length} perangkat</strong>
-                    <small>${data.reservations.length} IP terkunci</small></div></div>`;
+                    <small>${data.reservations.length} IP terkunci${(data.blocked || []).length ? ` · ${data.blocked.length} diblokir` : ''}</small></div></div>`;
             const time = new Date(data.fetched_at * 1000).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
             summary.textContent = `${data.device.model || 'Router'} · diperbarui ${time}`;
         }
@@ -812,7 +812,8 @@ const BudiHome = (() => {
             if (!offline) tags.push(`<span class="rt-tag">${c.connection === 'lan' ? 'Kabel' : 'WiFi'}</span>`);
             if (c.reserved_ip) tags.push('<span class="rt-tag lock"><i class="fa-solid fa-lock"></i> IP terkunci</span>');
             if (offline) tags.push('<span class="rt-tag off">Offline</span>');
-            return `<button class="rt-device ${offline ? 'offline' : ''}" data-mac="${esc(c.mac)}">
+            if (c.blocked) tags.push('<span class="rt-tag blocked"><i class="fa-solid fa-ban"></i> Diblokir</span>');
+            return `<button class="rt-device ${offline ? 'offline' : ''} ${c.blocked ? 'blocked' : ''}" data-mac="${esc(c.mac)}">
                 <span class="rt-icon"><i class="fa-solid ${ICONS[icon][0]}"></i></span>
                 <span class="rt-info"><strong>${esc(displayName(c))}</strong>
                     <small><span class="mono">${esc(c.reserved_ip || c.ip)}</span> ${tags.join(' ')}</small></span>
@@ -821,8 +822,10 @@ const BudiHome = (() => {
 
         function renderDevices() {
             const online = [...data.clients].sort((a, b) => ipNum(a.ip) - ipNum(b.ip));
-            const offline = data.reservations.filter(r => !r.online);
+            const blocked = (data.blocked_devices || []).filter(b => !b.online);
+            const offline = data.reservations.filter(r => !r.online && !r.blocked);
             listBox.innerHTML = online.map(c => deviceRow(c, false)).join('')
+                + (blocked.length ? `<div class="rt-section">Diblokir</div>${blocked.map(b => deviceRow({ ...b, blocked: true, reserved_ip: b.ip }, true)).join('')}` : '')
                 + (offline.length ? `<div class="rt-section">IP terkunci · sedang offline</div>${offline.map(r => deviceRow({ ...r, reserved_ip: r.ip }, true)).join('')}` : '');
         }
 
@@ -854,7 +857,9 @@ const BudiHome = (() => {
             const c = data.clients.find(x => x.mac === mac);
             if (c) return { ...c, online: true };
             const r = data.reservations.find(x => x.mac === mac);
-            return r ? { ...r, reserved_ip: r.ip, online: false, connection: '' } : null;
+            if (r) return { ...r, reserved_ip: r.ip, online: false, connection: '' };
+            const b = (data.blocked_devices || []).find(x => x.mac === mac);
+            return b ? { ...b, blocked: true, reserved_ip: null, online: false, connection: '' } : null;
         }
 
         function openDevice(mac) {
@@ -881,6 +886,11 @@ const BudiHome = (() => {
                     <div class="rt-divider"></div>
                     ${lockBlock}
                     ${randomWarn}
+                    <div class="rt-divider"></div>
+                    ${c.blocked
+                        ? `<div class="rt-lock blocked"><i class="fa-solid fa-ban"></i><div><strong>Internet diblokir</strong><small>Perangkat ini tidak bisa memakai internet & jaringan rumah.</small></div>
+                            <button type="button" class="pill-btn primary" data-act="unblock">Buka blokir</button></div>`
+                        : `<button type="button" class="pill-btn danger" data-act="block"><i class="fa-solid fa-ban"></i> Blokir perangkat ini</button>`}
                     <div class="form-error" hidden></div>
                 </form>
                 <div class="modal-actions"><span class="spacer"></span><button type="button" class="pill-btn" data-close>Tutup</button></div>`);
@@ -889,6 +899,7 @@ const BudiHome = (() => {
             const fail = (btn, html, msg) => { errBox.textContent = msg; errBox.hidden = false; btn.disabled = false; btn.innerHTML = html; };
             const working = (btn, html) => { const old = btn.innerHTML; btn.disabled = true; btn.innerHTML = html; return old; };
 
+            wireBlock(c, form, fail, working);
             form.querySelector('[data-act="save"]').addEventListener('click', async (e) => {
                 const btn = e.currentTarget, old = working(btn, '<i class="fa-solid fa-spinner fa-spin"></i>');
                 try {
@@ -918,6 +929,33 @@ const BudiHome = (() => {
                 try {
                     await api(`/api/router/reservations/${encodeURIComponent(c.mac)}`, { method: 'DELETE' });
                     toast('Kunci IP dilepas');
+                    DeviceEditor.close();
+                    load(true);
+                } catch (err) { fail(btn, old, err.message); }
+            });
+        }
+
+        function wireBlock(c, form, fail, working) {
+            form.querySelector('[data-act="block"]')?.addEventListener('click', async (e) => {
+                const btn = e.currentTarget;
+                if (btn.dataset.confirm !== '1') {
+                    btn.dataset.confirm = '1';
+                    btn.innerHTML = '<i class="fa-solid fa-triangle-exclamation"></i> Yakin? Ketuk lagi untuk blokir';
+                    return;
+                }
+                const old = working(btn, '<i class="fa-solid fa-spinner fa-spin"></i> Memblokir...');
+                try {
+                    await api(`/api/router/block/${encodeURIComponent(c.mac)}`, { method: 'POST' });
+                    toast(`${displayName(c)} diblokir`);
+                    DeviceEditor.close();
+                    load(true);
+                } catch (err) { btn.dataset.confirm = ''; fail(btn, '<i class="fa-solid fa-ban"></i> Blokir perangkat ini', err.message); }
+            });
+            form.querySelector('[data-act="unblock"]')?.addEventListener('click', async (e) => {
+                const btn = e.currentTarget, old = working(btn, '<i class="fa-solid fa-spinner fa-spin"></i>');
+                try {
+                    await api(`/api/router/block/${encodeURIComponent(c.mac)}`, { method: 'DELETE' });
+                    toast(`Blokir ${displayName(c)} dibuka`);
                     DeviceEditor.close();
                     load(true);
                 } catch (err) { fail(btn, old, err.message); }

@@ -3,6 +3,7 @@ import html
 import json
 import os
 import re
+import socket
 import threading
 import time
 from contextlib import contextmanager
@@ -155,10 +156,28 @@ class ZteRouter:
             quality = "baik" if -25 <= rx <= -8 else ("lemah" if rx < -25 else "terlalu kuat")
         return {"rx_dbm": rx, "tx_dbm": num("TxPower"), "quality": quality}
 
+    def _parse_blocklist(self, page: str) -> dict:
+        values, rules = {}, {}
+        for key, value in _transfer_values(page):
+            m = re.fullmatch(r"(SrcMacAddr|Enable)(\d+)", key)
+            if m:
+                rules.setdefault(int(m.group(2)), {})[m.group(1)] = value
+            elif value:
+                values[key] = value
+        return {
+            "enabled": values.get("MacFilterEnable") == "1",
+            "mode": values.get("MacFilterTarget", "Discard"),
+            "basic": {k: values.get(k, "NULL") for k in ("IsWanSrvCntl", "IpFilterTarget", "UrlFilterTarget", "UrlFilterEnable",
+                                                         "SrvCntlTarget", "DefaultPolicy", "MacFilterTarget", "MacFilterEnable")},
+            "rules": [{"index": i, "mac": r.get("SrcMacAddr", "").upper()} for i, r in sorted(rules.items())
+                      if MAC_RE.match(r.get("SrcMacAddr", "").upper()) and r.get("SrcMacAddr") != "00:00:00:00:00:00"],
+        }
+
     def snapshot(self) -> dict:
         with self.session() as s:
             dhcp = self._page(s, "net_dhcp_dynamic_t")
             static = self._page(s, "net_dhcp_static_t")
+            blocklist = self._page(s, "sec_macfilter_conf_t")
             wan = self._page(s, "status_ethwan_if_t")
             optical = self._page(s, "gpon_status_link_t")
             info = self._page(s, "status_dev_info_t")
@@ -166,6 +185,7 @@ class ZteRouter:
             "clients": self._parse_clients(dhcp),
             "pool": self._parse_pool(dhcp),
             "reservations": self._parse_reservations(static),
+            "blocked": [r["mac"] for r in self._parse_blocklist(blocklist)["rules"]],
             "wan": self._parse_wan(wan),
             "optical": self._parse_optical(optical),
             "device": {"model": _cell(info, "Frm_ModelName"), "serial": _cell(info, "Frm_SerialNumber"),
@@ -218,6 +238,47 @@ class ZteRouter:
             raise RouterError("Router tidak menghapus kunci IP. Coba lagi.")
         return saved
 
+    # Blokir = MAC Filter mode "Discard" (daftar hitam): semua lalu lintas dari MAC itu dibuang router.
+    def block(self, mac: str) -> list:
+        with self.session() as s:
+            page = self._page(s, "sec_macfilter_conf_t")
+            current = self._parse_blocklist(page)
+            if current["mode"] != "Discard":
+                raise RouterError("MAC Filter router sedang mode daftar putih (Permit). Ubah ke Discard dulu di halaman admin router.")
+            if any(r["mac"] == mac for r in current["rules"]):
+                raise RouterError("Perangkat ini sudah diblokir.")
+            result = self._submit(s, "sec_macfilter_conf_t", page, {
+                **{k: "NULL" for k in current["basic"]},
+                "Enable": "1", "BlackList": "NULL", "Type": "Bridge+Route", "Protocol": "ALL",
+                "SrcMacAddr": mac, "DstMacAddr": "00:00:00:00:00:00",
+                "MacFilterTarget": "Discard", "MacFilterEnable": "1",
+                "IF_ACTION": "new", "IF_INDEX": "-1", "IF_INSTNUM": str(len(current["rules"])),
+            })
+            saved = self._parse_blocklist(result)
+            if not saved["rules"]:
+                saved = self._parse_blocklist(self._page(s, "sec_macfilter_conf_t"))
+        if not any(r["mac"] == mac for r in saved["rules"]):
+            raise RouterError("Router tidak menyimpan blokir. Coba lagi.")
+        return [r["mac"] for r in saved["rules"]]
+
+    def unblock(self, mac: str) -> list:
+        with self.session() as s:
+            page = self._page(s, "sec_macfilter_conf_t")
+            current = self._parse_blocklist(page)
+            entry = next((r for r in current["rules"] if r["mac"] == mac), None)
+            if not entry:
+                raise RouterError("Perangkat ini tidak sedang diblokir.")
+            result = self._submit(s, "sec_macfilter_conf_t", page, {
+                **current["basic"],
+                "IF_ACTION": "delete", "IF_INDEX": str(entry["index"]), "IF_INSTNUM": str(len(current["rules"])),
+            })
+            saved = self._parse_blocklist(result)
+            if len(saved["rules"]) >= len(current["rules"]):
+                saved = self._parse_blocklist(self._page(s, "sec_macfilter_conf_t"))
+        if any(r["mac"] == mac for r in saved["rules"]):
+            raise RouterError("Router tidak membuka blokir. Coba lagi.")
+        return [r["mac"] for r in saved["rules"]]
+
     def reboot(self):
         with self.session() as s:
             page = self._page(s, "manager_dev_conf_t")
@@ -239,14 +300,28 @@ class RouterManager:
         self.names_path = os.path.join(base_dir, "data", "router_devices.json")
         self._cache = None
         self._busy_until = 0
+        self._last_ip, self._last_hostname = {}, {}
+        self._hostname = socket.gethostname()
+        self._own_ip = self._detect_own_ip(cfg.get("host", "192.168.1.1"))
         if self.enabled:
             print(f"[Router] 📶 Manajemen router {cfg.get('host')} aktif")
+
+    @staticmethod
+    def _detect_own_ip(router_host: str) -> str:
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+                sock.connect((router_host, 80))
+                return sock.getsockname()[0]
+        except OSError:
+            return ""
 
     def register_routes(self, app: web.Application):
         app.router.add_get("/api/router/status", self.handle_status)
         app.router.add_post("/api/router/reservations", self.handle_add_reservation)
         app.router.add_delete("/api/router/reservations/{mac}", self.handle_delete_reservation)
         app.router.add_put("/api/router/devices/{mac}", self.handle_rename)
+        app.router.add_post("/api/router/block/{mac}", self.handle_block)
+        app.router.add_delete("/api/router/block/{mac}", self.handle_unblock)
         app.router.add_post("/api/router/reboot", self.handle_reboot)
 
     # ---------- Nama & ikon perangkat (disimpan lokal, router tidak menyimpan nama) ----------
@@ -267,6 +342,7 @@ class RouterManager:
     def _decorate(self, snap: dict) -> dict:
         names = self._load_names()
         reserved = {r["mac"]: r["ip"] for r in snap["reservations"]}
+        blocked = set(snap.get("blocked", []))
         online = set()
         for c in snap["clients"]:
             online.add(c["mac"])
@@ -274,12 +350,29 @@ class RouterManager:
             c["name"] = meta.get("name", "")
             c["icon"] = meta.get("icon", "")
             c["reserved_ip"] = reserved.get(c["mac"])
+            c["blocked"] = c["mac"] in blocked
         for r in snap["reservations"]:
             meta = names.get(r["mac"], {})
             r["name"] = meta.get("name", "")
             r["icon"] = meta.get("icon", "")
             r["online"] = r["mac"] in online
+            r["blocked"] = r["mac"] in blocked
+        # Perangkat diblokir biasanya hilang dari daftar DHCP, jadi tampilkan terpisah agar bisa dibuka lagi
+        snap["blocked_devices"] = [{"mac": m, "ip": reserved.get(m) or self._last_ip.get(m, ""),
+                                    "hostname": self._last_hostname.get(m, ""), "online": m in online,
+                                    "name": names.get(m, {}).get("name", ""), "icon": names.get(m, {}).get("icon", "")}
+                                   for m in snap.get("blocked", [])]
         return snap
+
+    def _protected_macs(self, request) -> set:
+        """MAC yang tidak boleh diblokir: STB ini sendiri dan perangkat yang sedang membuka Liliya."""
+        protected = set()
+        for c in (self._cache or {}).get("clients", []):
+            if c.get("hostname") and c["hostname"] == self._hostname:
+                protected.add(c["mac"])
+            if c.get("ip") in (request.remote, self._own_ip):
+                protected.add(c["mac"])
+        return protected
 
     @staticmethod
     def _mac(request) -> str:
@@ -308,6 +401,10 @@ class RouterManager:
                 self._cache = await self._run(self.router.snapshot)
             except RouterError as e:
                 return self._error(e)
+            for c in self._cache["clients"]:
+                self._last_ip[c["mac"]] = c["ip"]
+                if c["hostname"]:
+                    self._last_hostname[c["mac"]] = c["hostname"]
         return web.json_response({"enabled": True, **self._decorate(json.loads(json.dumps(self._cache)))})
 
     async def handle_add_reservation(self, request):
@@ -350,6 +447,28 @@ class RouterManager:
         else:
             names.pop(mac, None)
         self._save_names(names)
+        return web.json_response({"status": "ok"})
+
+    async def handle_block(self, request):
+        mac = self._mac(request)
+        if not self._cache:
+            await self.handle_status(request)
+        if mac in self._protected_macs(request):
+            return self._error("Perangkat ini tidak bisa diblokir (STB Liliya atau perangkat yang sedang Anda pakai).", 400)
+        try:
+            await self._run(self.router.block, mac)
+        except RouterError as e:
+            return self._error(e)
+        self._cache = None
+        return web.json_response({"status": "ok"})
+
+    async def handle_unblock(self, request):
+        mac = self._mac(request)
+        try:
+            await self._run(self.router.unblock, mac)
+        except RouterError as e:
+            return self._error(e)
+        self._cache = None
         return web.json_response({"status": "ok"})
 
     async def handle_reboot(self, request):

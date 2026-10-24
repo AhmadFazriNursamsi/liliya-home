@@ -715,3 +715,9 @@ body.modal-open { overflow: hidden; }
 .rt-note { font-size: 0.78rem; line-height: 1.5; color: var(--text-muted); padding: 10px 12px; border-radius: 12px; background: #FFF6E5; border: 1px solid #F3D9A4; }
 .rt-note i { color: #B7791F; margin-right: 4px; }
 @media (max-width: 360px) { .rt-status { grid-template-columns: 1fr; } }
+
+.rt-tag.blocked { background: #FBE4E1; border-color: #F2B8B0; color: var(--red); }
+.rt-tag.blocked i { font-size: 0.6rem; }
+.rt-device.blocked .rt-icon { background: #FBE4E1; color: var(--red); }
+.rt-lock.blocked { background: #FBE4E1; border-color: #F2B8B0; }
+.rt-lock.blocked > i { color: var(--red); }
