@@ -43,7 +43,11 @@ import com.google.firebase.messaging.FirebaseMessaging;
 
 import org.json.JSONObject;
 
+import java.io.InputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
 import java.util.ArrayList;
+import java.util.function.Consumer;
 
 /**
  * Aplikasi Liliya: membungkus dashboard server BUDI (asisten, saklar rumah & CCTV) dalam WebView,
@@ -67,6 +71,7 @@ public class MainActivity extends Activity {
     private SpeechRecognizer recognizer;
     private PermissionRequest pendingWebPermission;
     private boolean pendingSpeechStart;
+    private String activeBase;   // alamat server yang sedang dimuat (WiFi rumah atau Cloudflare)
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -83,7 +88,8 @@ public class MainActivity extends Activity {
         if (savedInstanceState != null) {
             webView.restoreState(savedInstanceState);
         } else {
-            webView.loadUrl(getServerUrl() + (opensCctv(getIntent()) ? "/#cctv" : ""));
+            String hash = opensCctv(getIntent()) ? "/#cctv" : "";
+            resolveBase(base -> loadBase(base, hash));
         }
 
         LiliyaMessagingService.createChannels(this);
@@ -99,6 +105,71 @@ public class MainActivity extends Activity {
         if (opensCctv(intent) && webView != null) {
             webView.evaluateJavascript("window.BudiHome ? BudiHome.setTab('cctv') : (location.hash = 'cctv')", null);
         }
+    }
+
+    // ---------------- Jalur otomatis: WiFi rumah vs Cloudflare ----------------
+
+    /** Mode otomatis aktif selama pengguna tidak mengisi alamat server sendiri. */
+    private boolean autoRoute() {
+        return DEFAULT_URL.equals(getServerUrl());
+    }
+
+    /**
+     * Di rumah, video & data langsung dari STB lewat WiFi (jauh lebih cepat & stabil daripada
+     * memutar lewat Cloudflare). Di luar rumah memakai alamat Cloudflare.
+     */
+    private void resolveBase(Consumer<String> done) {
+        if (!autoRoute()) {
+            done.accept(getServerUrl());
+            return;
+        }
+        new Thread(() -> {
+            String base = isLiliyaReachable(LAN_URL) ? LAN_URL : DEFAULT_URL;
+            runOnUiThread(() -> done.accept(base));
+        }).start();
+    }
+
+    private static boolean isLiliyaReachable(String base) {
+        HttpURLConnection c = null;
+        try {
+            c = (HttpURLConnection) new URL(base + "/").openConnection();
+            c.setConnectTimeout(1200);
+            c.setReadTimeout(1500);
+            c.setInstanceFollowRedirects(false);
+            if (c.getResponseCode() != 200) return false;
+            // Pastikan benar-benar server Liliya, bukan perangkat lain yang kebetulan memakai IP sama
+            byte[] buf = new byte[2048];
+            try (InputStream in = c.getInputStream()) {
+                int n = in.read(buf);
+                return n > 0 && new String(buf, 0, n, "UTF-8").contains("Liliya");
+            }
+        } catch (Exception e) {
+            return false;
+        } finally {
+            if (c != null) c.disconnect();
+        }
+    }
+
+    private void loadBase(String base, String pathAndHash) {
+        boolean switched = activeBase != null && !activeBase.equals(base);
+        activeBase = base;
+        hideError();
+        webView.loadUrl(base + pathAndHash);
+        if (switched || LAN_URL.equals(base)) {
+            Toast.makeText(this, LAN_URL.equals(base) ? "Terhubung langsung lewat WiFi rumah" : "Terhubung lewat internet",
+                    Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    /** Pindah jalur bila jaringan berubah (mis. keluar rumah / sampai di rumah), tetap di tab yang sama. */
+    private void checkRouteChange() {
+        if (!autoRoute() || activeBase == null) return;
+        resolveBase(base -> {
+            if (base.equals(activeBase)) return;
+            String current = webView.getUrl();
+            String hash = (current != null && current.contains("#")) ? "/" + current.substring(current.indexOf('#')) : "";
+            loadBase(base, hash);
+        });
     }
 
     private static boolean opensCctv(Intent intent) {
@@ -239,9 +310,14 @@ public class MainActivity extends Activity {
     }
 
     private boolean isOwnServer(Uri uri) {
-        Uri server = Uri.parse(getServerUrl());
         String host = uri.getHost();
-        return host != null && host.equalsIgnoreCase(server.getHost()) && uri.getPort() == server.getPort();
+        if (host == null) return false;
+        for (String base : new String[]{activeBase, getServerUrl(), LAN_URL}) {
+            if (base == null) continue;
+            Uri server = Uri.parse(base);
+            if (host.equalsIgnoreCase(server.getHost()) && uri.getPort() == server.getPort()) return true;
+        }
+        return false;
     }
 
     private void exitFullscreen() {
@@ -281,7 +357,7 @@ public class MainActivity extends Activity {
         box.addView(title);
 
         TextView msg = new TextView(this);
-        msg.setText(message + "\n\nServer: " + getServerUrl());
+        msg.setText(message + "\n\nServer: " + (activeBase != null ? activeBase : getServerUrl()));
         msg.setTextColor(Color.parseColor("#85665A"));
         msg.setGravity(Gravity.CENTER);
         msg.setPadding(0, dp(12), 0, dp(24));
@@ -291,7 +367,7 @@ public class MainActivity extends Activity {
         retry.setText("Coba Lagi");
         retry.setOnClickListener(v -> {
             hideError();
-            webView.loadUrl(getServerUrl());
+            resolveBase(base -> loadBase(base, ""));
         });
         box.addView(retry);
 
@@ -322,10 +398,11 @@ public class MainActivity extends Activity {
 
         new AlertDialog.Builder(this)
                 .setTitle("Alamat Server")
-                .setMessage("Dari mana saja: " + DEFAULT_URL + "\nWiFi rumah: " + LAN_URL)
+                .setMessage("Otomatis (disarankan): langsung lewat WiFi rumah bila terjangkau, selain itu lewat "
+                        + DEFAULT_URL + "\n\nAtau isi alamat server sendiri.")
                 .setView(wrap)
                 .setPositiveButton("Simpan", (d, w) -> saveServerUrl(input.getText().toString()))
-                .setNeutralButton("Pakai WiFi Rumah", (d, w) -> saveServerUrl(LAN_URL))
+                .setNeutralButton("Otomatis", (d, w) -> saveServerUrl(DEFAULT_URL))
                 .setNegativeButton("Batal", null)
                 .show();
     }
@@ -336,7 +413,12 @@ public class MainActivity extends Activity {
         if (!url.startsWith("http://") && !url.startsWith("https://")) url = "https://" + url;
         getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString(KEY_URL, url).apply();
         hideError();
-        webView.loadUrl(url);
+        if (DEFAULT_URL.equals(url)) {
+            resolveBase(base -> loadBase(base, ""));
+        } else {
+            activeBase = url;
+            webView.loadUrl(url);
+        }
     }
 
     private String getServerUrl() {
@@ -510,6 +592,7 @@ public class MainActivity extends Activity {
     protected void onResume() {
         super.onResume();
         webView.onResume();
+        checkRouteChange();
     }
 
     @Override
