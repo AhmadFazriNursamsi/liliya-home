@@ -191,9 +191,10 @@ public class MainActivity extends Activity {
             FirebaseMessaging.getInstance().getToken().addOnSuccessListener(token -> {
                 getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString(LiliyaMessagingService.PREF_TOKEN, token).apply();
                 registerPushToken();
-            });
+            }).addOnFailureListener(e -> pushStatus("Token FCM gagal: " + e.getMessage()));
         } catch (Exception e) {
             // APK dibangun tanpa google-services.json: notifikasi tidak tersedia, aplikasi tetap jalan
+            pushStatus("Firebase tidak aktif: " + e.getMessage());
         }
     }
 
@@ -204,8 +205,17 @@ public class MainActivity extends Activity {
         String device = Build.MANUFACTURER + " " + Build.MODEL;
         String js = "(function(){if(location.pathname.indexOf('/login')===0)return;"
                 + "fetch('/api/push/register',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},"
-                + "body:JSON.stringify({token:" + JSONObject.quote(token) + ",device:" + JSONObject.quote(device) + "})}).catch(function(){});})()";
+                + "body:JSON.stringify({token:" + JSONObject.quote(token) + ",device:" + JSONObject.quote(device) + "})})"
+                + ".then(function(r){BudiAndroid.pushResult(r.status);}).catch(function(e){BudiAndroid.pushResult(-1);});})()";
         runOnUiThread(() -> webView.evaluateJavascript(js, null));
+    }
+
+    /** Status pendaftaran notifikasi: Toast hanya saat berubah (gagal / berhasil pertama kali). */
+    private void pushStatus(String msg) {
+        SharedPreferences sp = getSharedPreferences(PREFS, MODE_PRIVATE);
+        if (msg.equals(sp.getString("push_status", ""))) return;
+        sp.edit().putString("push_status", msg).apply();
+        runOnUiThread(() -> Toast.makeText(this, msg, Toast.LENGTH_LONG).show());
     }
 
     // ---------------- WebView ----------------
@@ -547,6 +557,11 @@ public class MainActivity extends Activity {
     private class Bridge {
         @JavascriptInterface
         public void startSpeech() { runOnUiThread(MainActivity.this::startSpeech); }
+
+        @JavascriptInterface
+        public void pushResult(int status) {
+            pushStatus(status == 200 ? "Notifikasi gerakan: HP terdaftar" : "Pendaftaran notifikasi gagal (kode " + status + ")");
+        }
 
         @JavascriptInterface
         public void stopSpeech() { runOnUiThread(MainActivity.this::stopSpeech); }
