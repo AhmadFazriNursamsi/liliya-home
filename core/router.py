@@ -1,4 +1,5 @@
 import asyncio
+import hmac
 import html
 import json
 import os
@@ -238,6 +239,93 @@ class ZteRouter:
             raise RouterError("Router tidak menghapus kunci IP. Coba lagi.")
         return saved
 
+    # ---------- WiFi (SSID utama = IGD.LD1.WLAN1) ----------
+    WIFI_VIEW = "IGD.LD1.WLAN1"
+    WIFI_PARAMS = ("Enable", "RadioStatus", "Standard", "BeaconInterval", "RtsCts", "Fragment", "DTIM", "TxPower",
+                   "CountryCode", "TxRate", "Channel", "ESSID", "ESSIDPrefix", "ACLPolicy", "BeaconType", "WEPAuthMode",
+                   "WEPEncryptionLevel", "WEPKeyIndex", "WPAAuthMode", "WPAEncryptType", "WPAGroupRekey", "WPAEAPServerIp",
+                   "RadiusPort", "RadiusServerPort", "WPAEAPSecret", "PossibleChannels", "BasicDataRates", "OpDataRates",
+                   "PossibleTxRates", "OOBAccessEnabled", "BeaconEnabled", "ESSIDHideEnable", "RegulatoryDomain", "WlanMode",
+                   "DistanceFromRoot", "PeerBSSID", "AuthServiceMode", "QosType", "Priority", "UAPSDEnabled",
+                   "AutoChannelEnabled", "ChannelsInUse", "11iAuthMode", "11iEncryptType", "MaxUserNum",
+                   "SSIDIsolationEnable", "VapIsolationEnable", "Band", "11nMode", "BandWidth", "SideBand", "11nRate",
+                   "SGIEnabled", "GreenField", "11acMode", "KeyPassphrase")
+    # Parameter yang selalu diisi halaman router saat tombol "Submit" ditekan (sisanya dikirim "NULL" = tidak diubah)
+    WIFI_SUBMITTED = ("RadioStatus", "SSIDIsolationEnable", "BasicDataRates", "OpDataRates", "11nMode", "GreenField",
+                      "CountryCode", "AutoChannelEnabled", "BandWidth", "SGIEnabled", "BeaconInterval", "TxRate", "TxPower",
+                      "QosType", "RtsCts", "DTIM", "Fragment", "Enable", "ESSID", "ESSIDHideEnable", "VapIsolationEnable",
+                      "MaxUserNum", "Priority", "BeaconType", "WPAAuthMode", "11iAuthMode", "WPAEncryptType",
+                      "11iEncryptType", "WPAEAPSecret", "WPAGroupRekey")
+    WPA_TYPES = {"WPA": "WPA-PSK", "11i": "WPA2-PSK", "WPAand11i": "WPA/WPA2-PSK"}
+
+    def _wifi_page(self, s, view: str) -> str:
+        page = self._page(s, "net_11n_conf_t")
+        if f"Transfer_meaning('IF_VIEWID','{view.replace('.', chr(92) + 'x2e')}')" in page:
+            return page
+        token = re.search(r'var session_token = "(\d+)"', page)
+        r = s.post(f"{self.base}/getpage.gch?pid=1002&nextpage=net_11n_conf_t.gch", timeout=20,
+                   data={"IF_ACTION": "", "IF_VIEWID": view, **({"_SESSION_TOKEN": token.group(1)} if token else {})})
+        r.raise_for_status()
+        return r.text
+
+    @staticmethod
+    def _wifi_values(page: str) -> dict:
+        values = {}
+        for key, value in _transfer_values(page):
+            if value and key not in values:
+                values[key] = value
+        return values
+
+    def wifi_info(self, view: str = WIFI_VIEW, with_password: bool = False) -> dict:
+        with self.session() as s:
+            v = self._wifi_values(self._wifi_page(s, view))
+        info = {
+            "view": view,
+            "enabled": v.get("Enable") == "1",
+            "ssid": v.get("ESSID", "")[len(v.get("ESSIDPrefix", "")):],
+            "hidden": v.get("ESSIDHideEnable") == "1",
+            "security": self.WPA_TYPES.get(v.get("BeaconType", ""), v.get("BeaconType", "")),
+            "band": v.get("Band", ""),
+            "channel": "Auto" if v.get("AutoChannelEnabled") == "1" else v.get("Channel", ""),
+            "max_users": int(v["MaxUserNum"]) if v.get("MaxUserNum", "").isdigit() else None,
+        }
+        if with_password:
+            info["password"] = v.get("WPAEAPSecret", "")
+        return info
+
+    def wifi_update(self, ssid=None, password=None, hidden=None, enabled=None, view: str = WIFI_VIEW) -> dict:
+        with self.session() as s:
+            page = self._wifi_page(s, view)
+            v = self._wifi_values(page)
+            if password is not None and v.get("BeaconType") not in self.WPA_TYPES:
+                raise RouterError("Keamanan WiFi bukan WPA/WPA2, ubah lewat halaman admin router.")
+            fields = {k: "NULL" for k in self.WIFI_PARAMS}
+            fields.update({k: v.get(k, "NULL") for k in self.WIFI_SUBMITTED})
+            if v.get("AutoChannelEnabled") != "1":
+                fields["Channel"] = v.get("Channel", "NULL")
+            fields["InstExist"] = "1"
+            prefix = v.get("ESSIDPrefix", "")
+            if ssid is not None:
+                fields["ESSID"] = prefix + ssid
+            if password is not None:
+                fields["WPAEAPSecret"] = password
+            if hidden is not None:
+                fields["ESSIDHideEnable"] = "1" if hidden else "0"
+            if enabled is not None:
+                fields["Enable"] = "1" if enabled else "0"
+            for i in range(4):
+                fields[f"WLAN_SSID{i}"] = f"IGD.LD1.WLAN{i + 1}"
+            fields.update({"WLAN_INSTNUM": v.get("WLAN_INSTNUM", "4"), "IF_ACTION": "apply",
+                           "IF_CONFIGTAG": "Y", "IF_VIEWID": view})
+            self._submit(s, "net_11n_conf_t", page, fields)
+            saved = self._wifi_values(self._wifi_page(s, view))
+        if ssid is not None and saved.get("ESSID", "")[len(prefix):] != ssid:
+            raise RouterError("Router tidak menyimpan nama WiFi baru.")
+        if password is not None and saved.get("WPAEAPSecret") != password:
+            raise RouterError("Router tidak menyimpan password WiFi baru.")
+        return {"ssid": saved.get("ESSID", "")[len(prefix):], "hidden": saved.get("ESSIDHideEnable") == "1",
+                "enabled": saved.get("Enable") == "1"}
+
     # Blokir = MAC Filter mode "Discard" (daftar hitam): semua lalu lintas dari MAC itu dibuang router.
     def block(self, mac: str) -> list:
         with self.session() as s:
@@ -301,6 +389,9 @@ class RouterManager:
         self._cache = None
         self._busy_until = 0
         self._last_ip, self._last_hostname = {}, {}
+        # Mengubah / melihat WiFi wajib memasukkan ulang sandi aplikasi Liliya (web_auth.password)
+        self._app_password = str((config.get("web_auth", {}) or {}).get("password", ""))
+        self._pw_failures = []
         self._hostname = socket.gethostname()
         self._own_ip = self._detect_own_ip(cfg.get("host", "192.168.1.1"))
         if self.enabled:
@@ -320,6 +411,9 @@ class RouterManager:
         app.router.add_post("/api/router/reservations", self.handle_add_reservation)
         app.router.add_delete("/api/router/reservations/{mac}", self.handle_delete_reservation)
         app.router.add_put("/api/router/devices/{mac}", self.handle_rename)
+        app.router.add_get("/api/router/wifi", self.handle_wifi)
+        app.router.add_post("/api/router/wifi/reveal", self.handle_wifi_reveal)
+        app.router.add_put("/api/router/wifi", self.handle_wifi_update)
         app.router.add_post("/api/router/block/{mac}", self.handle_block)
         app.router.add_delete("/api/router/block/{mac}", self.handle_unblock)
         app.router.add_post("/api/router/reboot", self.handle_reboot)
@@ -448,6 +542,71 @@ class RouterManager:
             names.pop(mac, None)
         self._save_names(names)
         return web.json_response({"status": "ok"})
+
+    # ---------- WiFi ----------
+    def _check_app_password(self, body: dict):
+        now = time.time()
+        self._pw_failures = [t for t in self._pw_failures if now - t < 600]
+        if len(self._pw_failures) >= 5:
+            raise web.HTTPTooManyRequests(text=json.dumps({"error": "Terlalu banyak sandi salah. Coba lagi 10 menit lagi."}),
+                                          content_type="application/json")
+        given = str(body.get("app_password", ""))
+        if not self._app_password or not hmac.compare_digest(given.encode(), self._app_password.encode()):
+            self._pw_failures.append(now)
+            raise web.HTTPForbidden(text=json.dumps({"error": "Sandi aplikasi salah."}), content_type="application/json")
+        self._pw_failures.clear()
+
+    @staticmethod
+    async def _body(request) -> dict:
+        try:
+            body = await request.json()
+            return body if isinstance(body, dict) else {}
+        except Exception:
+            return {}
+
+    async def handle_wifi(self, request):
+        try:
+            info = await self._run(self.router.wifi_info)
+        except RouterError as e:
+            return self._error(e)
+        clients = (self._cache or {}).get("clients", [])
+        info["connected"] = sum(1 for c in clients if c.get("port", "").upper() == "SSID1")
+        return web.json_response(info)
+
+    async def handle_wifi_reveal(self, request):
+        self._check_app_password(await self._body(request))
+        try:
+            info = await self._run(self.router.wifi_info, ZteRouter.WIFI_VIEW, True)
+        except RouterError as e:
+            return self._error(e)
+        return web.json_response({"password": info.get("password", "")}, headers={"Cache-Control": "no-store"})
+
+    async def handle_wifi_update(self, request):
+        body = await self._body(request)
+        self._check_app_password(body)
+        ssid = body.get("ssid")
+        password = body.get("password")
+        hidden = body.get("hidden")
+        if ssid is not None:
+            ssid = str(ssid).strip()
+            if not 1 <= len(ssid) <= 32 or not all(32 <= ord(ch) < 127 for ch in ssid):
+                return self._error("Nama WiFi harus 1–32 karakter (huruf, angka, simbol biasa).", 400)
+        if password is not None:
+            password = str(password)
+            if not 8 <= len(password) <= 63 or not all(32 < ord(ch) < 127 for ch in password):
+                return self._error("Password WiFi harus 8–63 karakter tanpa spasi.", 400)
+        if hidden is not None:
+            hidden = bool(hidden)
+        if ssid is None and password is None and hidden is None:
+            return self._error("Tidak ada perubahan.", 400)
+        try:
+            result = await self._run(lambda: self.router.wifi_update(ssid=ssid, password=password, hidden=hidden))
+        except RouterError as e:
+            return self._error(e)
+        print(f"[Router] 📶 WiFi diubah dari {request.remote}: "
+              f"{'nama ' if ssid is not None else ''}{'password ' if password is not None else ''}{'hidden ' if hidden is not None else ''}")
+        self._cache = None
+        return web.json_response({"status": "ok", **result})
 
     async def handle_block(self, request):
         mac = self._mac(request)

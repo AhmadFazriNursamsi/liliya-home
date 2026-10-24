@@ -978,11 +978,141 @@ const BudiHome = (() => {
             });
         }
 
+
+        // ---------- WiFi (wajib sandi aplikasi untuk melihat / mengubah) ----------
+        const wifiBox = document.getElementById('router-wifi');
+        let wifi = null;
+
+        async function loadWifi() {
+            try {
+                wifi = await api('/api/router/wifi');
+            } catch (e) {
+                wifiBox.innerHTML = `<div class="form-error">WiFi: ${esc(e.message)}</div>`;
+                return;
+            }
+            wifiBox.innerHTML = `
+                <div class="rt-wifi-head">
+                    <span class="rt-icon"><i class="fa-solid fa-wifi"></i></span>
+                    <div class="rt-info"><strong>${esc(wifi.ssid)}</strong>
+                        <small>${esc(wifi.security || 'Terbuka')} · ${esc(wifi.band)}${wifi.hidden ? ' · <span class="rt-tag">Tersembunyi</span>' : ''} · ${wifi.connected} perangkat</small></div>
+                </div>
+                <div class="pill-row">
+                    <button class="pill-btn" data-wifi="reveal"><i class="fa-solid fa-eye"></i> Lihat password</button>
+                    <button class="pill-btn" data-wifi="edit"><i class="fa-solid fa-pen"></i> Ubah WiFi</button>
+                </div>`;
+        }
+
+        const appPasswordField = `<label>Sandi aplikasi Liliya
+            <input name="app_password" type="password" autocomplete="current-password" required placeholder="Sandi untuk masuk Liliya"></label>`;
+
+        function openReveal() {
+            DeviceEditor.open(`<h3>Lihat password WiFi</h3>
+                <p class="modal-sub">Demi keamanan, masukkan sandi aplikasi Liliya dulu.</p>
+                <form class="device-form" novalidate>
+                    ${appPasswordField}
+                    <div class="rt-secret" hidden></div>
+                    <div class="form-error" hidden></div>
+                </form>
+                <div class="modal-actions"><span class="spacer"></span>
+                    <button type="button" class="pill-btn" data-close>Tutup</button>
+                    <button type="button" class="pill-btn primary" data-act="go"><i class="fa-solid fa-eye"></i> Tampilkan</button></div>`);
+            const card = document.querySelector('#device-modal .modal-card');
+            const form = card.querySelector('form');
+            const err = form.querySelector('.form-error');
+            const go = async () => {
+                const btn = card.querySelector('[data-act="go"]');
+                btn.disabled = true;
+                err.hidden = true;
+                try {
+                    const r = await api('/api/router/wifi/reveal', {
+                        method: 'POST', headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ app_password: form.elements.app_password.value })
+                    });
+                    const box = form.querySelector('.rt-secret');
+                    box.innerHTML = `<small>Password WiFi "${esc(wifi?.ssid || '')}"</small><strong class="mono">${esc(r.password)}</strong>
+                        <button type="button" class="pill-btn" data-act="copy"><i class="fa-regular fa-copy"></i> Salin</button>`;
+                    box.hidden = false;
+                    form.elements.app_password.closest('label').hidden = true;
+                    btn.hidden = true;
+                    box.querySelector('[data-act="copy"]').addEventListener('click', () => {
+                        navigator.clipboard?.writeText(r.password).then(() => toast('Password disalin'), () => toast('Gagal menyalin'));
+                    });
+                } catch (e) { err.textContent = e.message; err.hidden = false; btn.disabled = false; }
+            };
+            card.querySelector('[data-act="go"]').addEventListener('click', go);
+            form.addEventListener('submit', (e) => { e.preventDefault(); go(); });
+        }
+
+        function openEditWifi() {
+            DeviceEditor.open(`<h3>Ubah WiFi</h3>
+                <form class="device-form" novalidate>
+                    <label>Nama WiFi <input name="ssid" maxlength="32" value="${esc(wifi?.ssid || '')}"></label>
+                    <label>Password baru <small>(kosongkan jika tidak diganti)</small>
+                        <span class="rt-pass"><input name="password" type="password" maxlength="63" autocomplete="new-password" placeholder="Minimal 8 karakter">
+                        <button type="button" class="pill-btn icon" data-act="toggle" aria-label="Tampilkan password"><i class="fa-solid fa-eye"></i></button></span></label>
+                    <label class="rt-check"><input name="hidden" type="checkbox" ${wifi?.hidden ? 'checked' : ''}> Sembunyikan nama WiFi (tidak muncul di daftar WiFi)</label>
+                    <div class="rt-note"><i class="fa-solid fa-triangle-exclamation"></i> Setelah disimpan, <strong>semua perangkat WiFi terputus</strong> beberapa detik. Jika nama atau password diganti, HP, laptop, kamera WiFi & <strong>gateway Tuya</strong> harus disambungkan ulang (gateway Tuya biasanya perlu pairing ulang di Smart Life).</div>
+                    ${appPasswordField}
+                    <div class="form-error" hidden></div>
+                </form>
+                <div class="modal-actions"><span class="spacer"></span>
+                    <button type="button" class="pill-btn" data-close>Batal</button>
+                    <button type="button" class="pill-btn primary" data-act="save"><i class="fa-solid fa-check"></i> Simpan</button></div>`);
+            const card = document.querySelector('#device-modal .modal-card');
+            const form = card.querySelector('form');
+            const err = form.querySelector('.form-error');
+            const fail = (msg) => { err.textContent = msg; err.hidden = false; };
+            card.querySelector('[data-act="toggle"]').addEventListener('click', (e) => {
+                const input = form.elements.password;
+                input.type = input.type === 'password' ? 'text' : 'password';
+                e.currentTarget.innerHTML = `<i class="fa-solid ${input.type === 'password' ? 'fa-eye' : 'fa-eye-slash'}"></i>`;
+            });
+            card.querySelector('[data-act="save"]').addEventListener('click', async (e) => {
+                const btn = e.currentTarget;
+                err.hidden = true;
+                const body = { app_password: form.elements.app_password.value };
+                const ssid = form.elements.ssid.value.trim();
+                const password = form.elements.password.value;
+                const hidden = form.elements.hidden.checked;
+                if (ssid !== wifi.ssid) body.ssid = ssid;
+                if (password) body.password = password;
+                if (hidden !== wifi.hidden) body.hidden = hidden;
+                if (!body.ssid && !body.password && body.hidden === undefined) return fail('Belum ada yang diubah.');
+                if (body.ssid !== undefined && !ssid) return fail('Nama WiFi tidak boleh kosong.');
+                if (body.password && (password.length < 8 || /\s/.test(password))) return fail('Password minimal 8 karakter, tanpa spasi.');
+                if (!body.app_password) return fail('Masukkan sandi aplikasi Liliya.');
+                btn.disabled = true;
+                btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Menyimpan ke router...';
+                try {
+                    await api('/api/router/wifi', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+                    DeviceEditor.close();
+                    toast('WiFi diperbarui. Sambungkan ulang perangkat bila diminta.');
+                    loadWifi();
+                } catch (e2) {
+                    if (e2 instanceof TypeError) {
+                        // Koneksi HP ikut terputus karena WiFi router restart: perubahan kemungkinan besar sudah tersimpan
+                        DeviceEditor.close();
+                        toast('Koneksi terputus saat WiFi restart. Sambungkan ulang ke WiFi, lalu cek lagi.');
+                        return;
+                    }
+                    fail(e2.message);
+                    btn.disabled = false;
+                    btn.innerHTML = '<i class="fa-solid fa-check"></i> Simpan';
+                }
+            });
+        }
+
+        wifiBox.addEventListener('click', e => {
+            const b = e.target.closest('[data-wifi]');
+            if (!b || !wifi) return;
+            if (b.dataset.wifi === 'reveal') openReveal(); else openEditWifi();
+        });
+
         listBox.addEventListener('click', e => { const b = e.target.closest('[data-mac]'); if (b && data) openDevice(b.dataset.mac); });
-        document.getElementById('btn-router-refresh').addEventListener('click', () => load(true));
+        document.getElementById('btn-router-refresh').addEventListener('click', () => { load(true).then(loadWifi); });
         document.getElementById('btn-router-reboot').addEventListener('click', confirmReboot);
 
-        return { show: () => load(false) };
+        return { show: () => load(false).then(() => { if (!wifi) loadWifi(); }) };
     })();
 
     // ---------- Init ----------

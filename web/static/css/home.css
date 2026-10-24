@@ -721,3 +721,13 @@ body.modal-open { overflow: hidden; }
 .rt-device.blocked .rt-icon { background: #FBE4E1; color: var(--red); }
 .rt-lock.blocked { background: #FBE4E1; border-color: #F2B8B0; }
 .rt-lock.blocked > i { color: var(--red); }
+
+.rt-wifi { display: flex; flex-direction: column; gap: 10px; padding: 12px; border-radius: 16px; background: var(--surface); border: 1px solid var(--border); }
+.rt-wifi-head { display: flex; align-items: center; gap: 12px; }
+.rt-secret { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; padding: 12px; border-radius: 14px; background: var(--peach-soft); border: 1px solid var(--peach); }
+.rt-secret small { color: var(--text-muted); font-size: 0.78rem; }
+.rt-secret strong { font-size: 1.15rem; word-break: break-all; }
+.rt-pass { display: flex; gap: 8px; align-items: center; }
+.rt-pass input { flex: 1; }
+.device-form label.rt-check { flex-direction: row; align-items: center; gap: 10px; font-weight: 500; }
+.device-form label.rt-check input { width: 20px; height: 20px; flex: 0 0 auto; }
