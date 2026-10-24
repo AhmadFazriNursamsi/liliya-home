@@ -35,13 +35,14 @@ const BudiHome = (() => {
 
     // ---------- Tabs ----------
     function setTab(tab) {
-        if (!['assistant', 'home', 'cctv'].includes(tab)) tab = 'assistant';
+        if (!['assistant', 'home', 'cctv', 'router'].includes(tab)) tab = 'assistant';
         if (appContainer.dataset.tab !== tab) window.scrollTo(0, 0);
         appContainer.dataset.tab = tab;
         document.querySelectorAll('.tab-btn[data-tab]').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
         try { localStorage.setItem('budi_tab', tab); } catch (e) {}
         if (tab === 'home') loadDevices();
         if (tab === 'cctv') Cctv.show(); else Cctv.hide();
+        if (tab === 'router') Router.show();
     }
 
     document.querySelectorAll('.tab-btn[data-tab]').forEach(b => b.addEventListener('click', () => setTab(b.dataset.tab)));
@@ -413,7 +414,7 @@ const BudiHome = (() => {
         }
 
         document.getElementById('btn-add-device')?.addEventListener('click', openAdd);
-        return { openAdd, openEdit };
+        return { openAdd, openEdit, open, close };
     })();
 
 
@@ -753,6 +754,197 @@ const BudiHome = (() => {
         }
 
         return { show, hide };
+    })();
+
+    // ---------- Router (ZTE) ----------
+    const Router = (() => {
+        const root = document.getElementById('panel-router');
+        const statusBox = document.getElementById('router-status');
+        const listBox = document.getElementById('router-devices');
+        const summary = document.getElementById('router-summary');
+        const ICONS = {
+            phone: ['fa-mobile-screen', 'HP'], laptop: ['fa-laptop', 'Laptop / PC'], tv: ['fa-tv', 'TV'],
+            camera: ['fa-video', 'Kamera'], server: ['fa-server', 'Server / STB'], smart: ['fa-plug', 'Perangkat pintar'],
+            router: ['fa-wifi', 'Router / Repeater'], other: ['fa-circle-question', 'Lainnya']
+        };
+        let data = null;
+        let loading = false;
+
+        function guessIcon(c) {
+            const h = (c.hostname || '').toLowerCase();
+            if (c.icon) return c.icon;
+            if (/redmi|galaxy|iphone|oppo|vivo|realme|android|poco|xiaomi|infinix|samsung|pixel/.test(h)) return 'phone';
+            if (/aml|box|armbian|raspberry|server/.test(h)) return 'server';
+            if (/desktop|laptop|pc|macbook|thinkpad/.test(h)) return 'laptop';
+            if (/tv|chromecast|roku/.test(h)) return 'tv';
+            if (/tapo|cam|ipc/.test(h)) return 'camera';
+            if (/^(c4:82:e1|d8:1f:12|10:d5:61|50:8a:06|68:57:2d|a0:92:08|38:1f:8d|84:e3:42)/i.test(c.mac)) return 'smart';
+            return 'other';
+        }
+        const displayName = c => c.name || c.hostname || (guessIcon(c) === 'smart' ? 'Perangkat Tuya' : 'Tanpa nama');
+        const ipNum = ip => String(ip).split('.').reduce((n, x) => n * 256 + Number(x), 0);
+
+        function fmtDuration(sec) {
+            if (sec == null) return '-';
+            const d = Math.floor(sec / 86400), h = Math.floor(sec % 86400 / 3600), m = Math.floor(sec % 3600 / 60);
+            return d ? `${d} hari ${h} jam` : h ? `${h} jam ${m} mnt` : `${m} mnt`;
+        }
+
+        function renderStatus() {
+            const w = data.wan, o = data.optical;
+            statusBox.innerHTML = `
+                <div class="rt-stat ${w.connected ? 'ok' : 'bad'}"><i class="fa-solid fa-globe"></i>
+                    <div><strong>${w.connected ? 'Internet terhubung' : 'Internet terputus'}</strong>
+                    <small>${w.connected ? `Online ${fmtDuration(w.online_seconds)}` : esc(w.status || 'Tidak ada koneksi')}</small></div></div>
+                <div class="rt-stat ${o.quality === 'baik' ? 'ok' : o.quality ? 'warn' : ''}"><i class="fa-solid fa-signal"></i>
+                    <div><strong>Sinyal fiber ${o.quality ? esc(o.quality) : '-'}</strong>
+                    <small>${o.rx_dbm != null ? `${o.rx_dbm} dBm` : 'tidak terbaca'}</small></div></div>
+                <div class="rt-stat"><i class="fa-solid fa-network-wired"></i>
+                    <div><strong>${data.clients.length} perangkat</strong>
+                    <small>${data.reservations.length} IP terkunci</small></div></div>`;
+            const time = new Date(data.fetched_at * 1000).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+            summary.textContent = `${data.device.model || 'Router'} · diperbarui ${time}`;
+        }
+
+        function deviceRow(c, offline) {
+            const icon = guessIcon(c);
+            const tags = [];
+            if (!offline) tags.push(`<span class="rt-tag">${c.connection === 'lan' ? 'Kabel' : 'WiFi'}</span>`);
+            if (c.reserved_ip) tags.push('<span class="rt-tag lock"><i class="fa-solid fa-lock"></i> IP terkunci</span>');
+            if (offline) tags.push('<span class="rt-tag off">Offline</span>');
+            return `<button class="rt-device ${offline ? 'offline' : ''}" data-mac="${esc(c.mac)}">
+                <span class="rt-icon"><i class="fa-solid ${ICONS[icon][0]}"></i></span>
+                <span class="rt-info"><strong>${esc(displayName(c))}</strong>
+                    <small><span class="mono">${esc(c.reserved_ip || c.ip)}</span> ${tags.join(' ')}</small></span>
+                <i class="fa-solid fa-chevron-right"></i></button>`;
+        }
+
+        function renderDevices() {
+            const online = [...data.clients].sort((a, b) => ipNum(a.ip) - ipNum(b.ip));
+            const offline = data.reservations.filter(r => !r.online);
+            listBox.innerHTML = online.map(c => deviceRow(c, false)).join('')
+                + (offline.length ? `<div class="rt-section">IP terkunci · sedang offline</div>${offline.map(r => deviceRow({ ...r, reserved_ip: r.ip }, true)).join('')}` : '');
+        }
+
+        async function load(refresh) {
+            if (loading) return;
+            loading = true;
+            root.classList.add('is-loading');
+            try {
+                const res = await api('/api/router/status' + (refresh ? '?refresh=1' : ''));
+                if (!res.enabled) {
+                    statusBox.innerHTML = '';
+                    listBox.innerHTML = '<div class="empty-note">Router belum dikonfigurasi di config.yaml (bagian router).</div>';
+                    return;
+                }
+                data = res;
+                renderStatus();
+                renderDevices();
+            } catch (e) {
+                if (!data) { statusBox.innerHTML = ''; listBox.innerHTML = ''; }
+                listBox.querySelector('.form-error')?.remove();
+                listBox.insertAdjacentHTML('afterbegin', `<div class="form-error">${esc(e.message)}</div>`);
+            } finally {
+                loading = false;
+                root.classList.remove('is-loading');
+            }
+        }
+
+        function findDevice(mac) {
+            const c = data.clients.find(x => x.mac === mac);
+            if (c) return { ...c, online: true };
+            const r = data.reservations.find(x => x.mac === mac);
+            return r ? { ...r, reserved_ip: r.ip, online: false, connection: '' } : null;
+        }
+
+        function openDevice(mac) {
+            const c = findDevice(mac);
+            if (!c) return;
+            const icon = guessIcon(c);
+            const iconOptions = Object.entries(ICONS).map(([k, [, label]]) =>
+                `<option value="${k}" ${icon === k ? 'selected' : ''}>${label}</option>`).join('');
+            const randomWarn = c.random_mac && c.connection === 'wifi'
+                ? '<div class="rt-note"><i class="fa-solid fa-shuffle"></i> Perangkat ini memakai <strong>MAC acak (privasi)</strong>. Agar IP terkunci tetap berlaku, ubah pengaturan WiFi rumah di perangkat tersebut ke "MAC perangkat" / matikan "MAC acak".</div>' : '';
+            const lockBlock = c.reserved_ip
+                ? `<div class="rt-lock on"><i class="fa-solid fa-lock"></i><div><strong>IP terkunci di ${esc(c.reserved_ip)}</strong><small>Router selalu memberi IP ini ke perangkat ini.</small></div>
+                    <button type="button" class="pill-btn danger" data-act="unlock">Lepas</button></div>`
+                : `<div class="rt-lock"><i class="fa-solid fa-lock-open"></i><div><strong>IP belum dikunci</strong><small>IP bisa berubah saat perangkat restart.</small></div></div>
+                    <label>Kunci ke IP <input name="ip" class="mono" inputmode="decimal" value="${esc(c.ip)}" placeholder="192.168.1.x"></label>
+                    <button type="button" class="pill-btn primary" data-act="lock"><i class="fa-solid fa-lock"></i> Kunci IP</button>`;
+            const where = c.online ? ` · ${esc(c.ip)} · ${c.connection === 'lan' ? 'Kabel ' + esc(c.port) : 'WiFi'}` : ' · offline';
+            DeviceEditor.open(`<h3>${esc(displayName(c))}</h3>
+                <p class="modal-sub mono">${esc(c.mac)}${where}${c.hostname ? ` · ${esc(c.hostname)}` : ''}</p>
+                <form class="device-form" novalidate>
+                    <label>Nama <input name="name" maxlength="40" value="${esc(c.name || '')}" placeholder="${esc(c.hostname || 'mis. HP Ibu')}"></label>
+                    <label>Jenis <select name="icon">${iconOptions}</select></label>
+                    <button type="button" class="pill-btn" data-act="save"><i class="fa-solid fa-check"></i> Simpan nama</button>
+                    <div class="rt-divider"></div>
+                    ${lockBlock}
+                    ${randomWarn}
+                    <div class="form-error" hidden></div>
+                </form>
+                <div class="modal-actions"><span class="spacer"></span><button type="button" class="pill-btn" data-close>Tutup</button></div>`);
+            const form = document.querySelector('#device-modal .device-form');
+            const errBox = form.querySelector('.form-error');
+            const fail = (btn, html, msg) => { errBox.textContent = msg; errBox.hidden = false; btn.disabled = false; btn.innerHTML = html; };
+            const working = (btn, html) => { const old = btn.innerHTML; btn.disabled = true; btn.innerHTML = html; return old; };
+
+            form.querySelector('[data-act="save"]').addEventListener('click', async (e) => {
+                const btn = e.currentTarget, old = working(btn, '<i class="fa-solid fa-spinner fa-spin"></i>');
+                try {
+                    await api(`/api/router/devices/${encodeURIComponent(c.mac)}`, {
+                        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ name: form.elements.name.value, icon: form.elements.icon.value })
+                    });
+                    toast('Nama perangkat disimpan');
+                    DeviceEditor.close();
+                    load(false);
+                } catch (err) { fail(btn, old, err.message); }
+            });
+            form.querySelector('[data-act="lock"]')?.addEventListener('click', async (e) => {
+                const ip = form.elements.ip.value.trim();
+                const btn = e.currentTarget, old = working(btn, '<i class="fa-solid fa-spinner fa-spin"></i> Menyimpan ke router...');
+                try {
+                    await api('/api/router/reservations', {
+                        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mac: c.mac, ip })
+                    });
+                    toast(`IP ${ip} dikunci`);
+                    DeviceEditor.close();
+                    load(true);
+                } catch (err) { fail(btn, old, err.message); }
+            });
+            form.querySelector('[data-act="unlock"]')?.addEventListener('click', async (e) => {
+                const btn = e.currentTarget, old = working(btn, '<i class="fa-solid fa-spinner fa-spin"></i>');
+                try {
+                    await api(`/api/router/reservations/${encodeURIComponent(c.mac)}`, { method: 'DELETE' });
+                    toast('Kunci IP dilepas');
+                    DeviceEditor.close();
+                    load(true);
+                } catch (err) { fail(btn, old, err.message); }
+            });
+        }
+
+        function confirmReboot() {
+            DeviceEditor.open(`<h3>Restart router?</h3>
+                <p class="modal-sub">Internet dan WiFi di rumah akan mati sekitar 1–2 menit. Liliya dari luar rumah juga ikut terputus sampai router menyala lagi.</p>
+                <div class="modal-actions"><span class="spacer"></span>
+                    <button type="button" class="pill-btn" data-close>Batal</button>
+                    <button type="button" class="pill-btn danger" data-act="reboot"><i class="fa-solid fa-power-off"></i> Restart</button></div>`);
+            document.querySelector('#device-modal [data-act="reboot"]').addEventListener('click', async (e) => {
+                e.currentTarget.disabled = true;
+                try {
+                    await api('/api/router/reboot', { method: 'POST' });
+                    toast('Router sedang restart, tunggu ±2 menit');
+                } catch (err) { toast(err.message); }
+                DeviceEditor.close();
+            });
+        }
+
+        listBox.addEventListener('click', e => { const b = e.target.closest('[data-mac]'); if (b && data) openDevice(b.dataset.mac); });
+        document.getElementById('btn-router-refresh').addEventListener('click', () => load(true));
+        document.getElementById('btn-router-reboot').addEventListener('click', confirmReboot);
+
+        return { show: () => load(false) };
     })();
 
     // ---------- Init ----------

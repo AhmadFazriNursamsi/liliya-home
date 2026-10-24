@@ -6,6 +6,7 @@ from aiohttp import web
 
 from core.web_auth import WebAuth
 from core.cctv import CCTVManager
+from core.router import RouterManager
 
 class WebServer:
     def __init__(self, config, event_bridge=None, smart_home_db=None, host="0.0.0.0", port=8080):
@@ -23,6 +24,7 @@ class WebServer:
 
         self.auth = WebAuth(config, self.base_dir)
         self.cctv = CCTVManager(config)
+        self.router = RouterManager(config, self.base_dir)
         self.app = web.Application(middlewares=[self.auth.middleware])
         self._setup_routes()
 
@@ -53,6 +55,9 @@ class WebServer:
 
         # CCTV Routes (rekaman, live view via go2rtc, pan-tilt)
         self.cctv.register_routes(self.app)
+
+        # Router Routes (perangkat terhubung, kunci IP, status internet, restart)
+        self.router.register_routes(self.app)
 
     async def handle_index(self, request):
         index_file = os.path.join(self.web_dir, 'index.html')

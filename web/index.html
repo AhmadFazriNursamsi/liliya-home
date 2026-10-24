@@ -15,8 +15,8 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="/static/css/liliya.css?v=20261024_v1">
-    <link rel="stylesheet" href="/static/css/home.css?v=20261024_v10">
+    <link rel="stylesheet" href="/static/css/liliya.css?v=20261024_v2">
+    <link rel="stylesheet" href="/static/css/home.css?v=20261024_v11">
 </head>
 <body class="state-idle">
     <div class="app-container" data-tab="assistant">
@@ -124,6 +124,23 @@
             </div>
         </section>
 
+        <!-- Router -->
+        <section class="tab-panel" id="panel-router">
+            <div class="panel-head">
+                <div>
+                    <h2>Router</h2>
+                    <div class="sub" id="router-summary">Memuat data router...</div>
+                </div>
+                <div class="pill-row">
+                    <button class="pill-btn icon" id="btn-router-refresh" title="Muat ulang" aria-label="Muat ulang"><i class="fa-solid fa-rotate"></i></button>
+                    <button class="pill-btn icon danger" id="btn-router-reboot" title="Restart router" aria-label="Restart router"><i class="fa-solid fa-power-off"></i></button>
+                </div>
+            </div>
+            <div class="rt-status" id="router-status"></div>
+            <h3 class="rt-title">Perangkat terhubung</h3>
+            <div class="rt-list" id="router-devices"><div class="modal-loading"><i class="fa-solid fa-spinner fa-spin"></i> Menghubungi router...</div></div>
+        </section>
+
         <!-- Modal Tambah / Edit Perangkat -->
         <div class="modal" id="device-modal" role="dialog" aria-modal="true" hidden>
             <div class="modal-card"></div>
@@ -135,9 +152,10 @@
         <button class="tab-btn" data-tab="assistant"><i class="fa-solid fa-microphone"></i><span>Asisten</span></button>
         <button class="tab-btn" data-tab="home"><i class="fa-solid fa-house"></i><span>Rumah</span></button>
         <button class="tab-btn" data-tab="cctv"><i class="fa-solid fa-video"></i><span>CCTV</span></button>
+        <button class="tab-btn" data-tab="router"><i class="fa-solid fa-wifi"></i><span>Router</span></button>
     </nav>
 
-    <script src="/static/js/home.js?v=20261024_v9"></script>
+    <script src="/static/js/home.js?v=20261024_v10"></script>
     <script>
 // =========================================================
 // Liliya — Asisten suara (WebSocket ke server BUDI)

@@ -161,7 +161,8 @@ a { color: inherit; }
 
 .app-container[data-tab="assistant"] > #panel-assistant,
 .app-container[data-tab="home"] > #panel-home,
-.app-container[data-tab="cctv"] > #panel-cctv {
+.app-container[data-tab="cctv"] > #panel-cctv,
+.app-container[data-tab="router"] > #panel-router {
     display: flex;
     animation: fadeIn 0.2s ease;
 }
