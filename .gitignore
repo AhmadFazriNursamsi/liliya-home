@@ -16,3 +16,4 @@ android/app/google-services.json
 data/push_tokens.json
 data/push_settings.json
 secrets/
+web/static/apk/

@@ -8,6 +8,7 @@ from core.web_auth import WebAuth
 from core.cctv import CCTVManager
 from core.router import RouterManager
 from core.push import PushManager
+from core.tapo_control import TapoControlManager
 
 class WebServer:
     def __init__(self, config, event_bridge=None, smart_home_db=None, host="0.0.0.0", port=8080):
@@ -28,6 +29,7 @@ class WebServer:
         self.router = RouterManager(config, self.base_dir)
         self.push = PushManager(config, self.base_dir)
         self.cctv.push = self.push
+        self.tapo = TapoControlManager(config)
         self.app = web.Application(middlewares=[self.auth.middleware])
         self._setup_routes()
 
@@ -58,6 +60,8 @@ class WebServer:
 
         # CCTV Routes (rekaman, live view via go2rtc, pan-tilt)
         self.cctv.register_routes(self.app)
+        # Kontrol kamera Tapo (privasi, deteksi gerakan, mode malam, sirene)
+        self.tapo.register_routes(self.app)
 
         # Router Routes (perangkat terhubung, kunci IP, status internet, restart)
         self.router.register_routes(self.app)

@@ -709,6 +709,119 @@ const BudiHome = (() => {
                     </div></div>`).join('');
         }
 
+        // ---------- Kontrol kamera Tapo (privasi, deteksi, mode malam, sirene) ----------
+        const ctrlEl = document.getElementById('cctv-controls');
+        let ctrl = null;
+        let sirenTimer = null;
+        const SENS = [['low', 'Rendah'], ['normal', 'Normal'], ['high', 'Tinggi']];
+        const NIGHT = [['auto', 'Otomatis'], ['on', 'Inframerah'], ['off', 'Mati']];
+        const seg = (key, opts, value, disabled) => `<div class="seg-ctl" role="radiogroup">${opts.map(([v, l]) =>
+            `<button data-ctl="${key}" data-val="${v}" class="${v === value ? 'on' : ''}" role="radio" aria-checked="${v === value}" ${disabled ? 'disabled' : ''}>${l}</button>`).join('')}</div>`;
+        const sw = (key, on, label) => `<button class="switch ${on ? 'on' : ''}" data-ctl="${key}" role="switch" aria-checked="${on}" aria-label="${label}"><span></span></button>`;
+
+        function renderControls() {
+            if (!ctrl) return;
+            if (ctrl.error) {
+                ctrlEl.innerHTML = `<div class="ctl-error"><i class="fa-solid fa-triangle-exclamation"></i><span>${esc(ctrl.error)}</span>
+                    <button class="pill-btn icon" data-ctl="reload" aria-label="Coba lagi"><i class="fa-solid fa-rotate"></i></button></div>`;
+                return;
+            }
+            const off = ctrl.privacy;   // saat mode privasi, kamera tidur: pengaturan lain tidak berguna
+            ctrlEl.innerHTML = `
+                <div class="ctl-row ${ctrl.privacy ? 'warn' : ''}">
+                    <i class="fa-solid ${ctrl.privacy ? 'fa-eye-slash' : 'fa-eye'}"></i>
+                    <span><strong>Mode privasi</strong><small>${ctrl.privacy ? 'Kamera tidur: tidak ada live, rekaman, maupun deteksi' : 'Kamera aktif merekam'}</small></span>
+                    ${sw('privacy', ctrl.privacy, 'Mode privasi')}
+                </div>
+                <div class="ctl-row ${off ? 'dim' : ''}">
+                    <i class="fa-solid fa-person-running"></i>
+                    <span><strong>Deteksi gerakan</strong><small>${ctrl.motion ? 'Notifikasi & penanda gerakan aktif' : 'Mati: tidak ada notifikasi gerakan'}</small></span>
+                    ${sw('motion', ctrl.motion, 'Deteksi gerakan')}
+                </div>
+                ${ctrl.motion ? `<div class="ctl-sub ${off ? 'dim' : ''}"><small>Sensitivitas</small>${seg('sensitivity', SENS, ctrl.sensitivity, off)}</div>` : ''}
+                ${ctrl.person === null ? '' : `<div class="ctl-row ${off ? 'dim' : ''}">
+                    <i class="fa-solid fa-user"></i>
+                    <span><strong>Deteksi orang</strong><small>Tandai khusus bila yang bergerak adalah orang</small></span>
+                    ${sw('person', ctrl.person, 'Deteksi orang')}
+                </div>`}
+                <div class="ctl-row ${off ? 'dim' : ''}">
+                    <i class="fa-solid fa-moon"></i>
+                    <span><strong>Mode malam</strong><small>Inframerah = gambar hitam-putih saat gelap</small></span>
+                </div>
+                <div class="ctl-sub ${off ? 'dim' : ''}">${seg('night', NIGHT, ctrl.night, off)}</div>
+                <button class="siren-btn ${ctrl.siren ? 'on' : ''}" data-ctl="siren" ${off ? 'disabled' : ''}>
+                    <i class="fa-solid fa-bullhorn"></i>
+                    <span>${ctrl.siren ? 'Sirene berbunyi · ketuk untuk hentikan' : 'Bunyikan sirene'}</span>
+                </button>`;
+        }
+
+        async function loadControls() {
+            if (!cam) return;
+            try {
+                ctrl = await api(`/api/cctv/${encodeURIComponent(cam.id)}/controls`);
+            } catch (e) {
+                if (e.message === 'Error 404') { ctrlEl.hidden = true; return; }   // kamera tanpa kontrol Tapo
+                ctrl = { error: e.message };
+            }
+            renderControls();
+            ctrlEl.hidden = false;
+        }
+
+        async function saveControl(body, btn) {
+            ctrlEl.querySelectorAll('button').forEach(b => { b.disabled = true; });
+            if (btn) btn.classList.add('busy');
+            try {
+                ctrl = await api(`/api/cctv/${encodeURIComponent(cam.id)}/controls`, {
+                    method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+                });
+                if ('privacy' in body) {
+                    toast(body.privacy ? 'Mode privasi aktif: kamera tidur' : 'Kamera aktif kembali');
+                    if (mode === 'live') setTimeout(startLive, body.privacy ? 0 : 2500);
+                }
+            } catch (e) {
+                toast(e.message);
+            }
+            renderControls();
+        }
+
+        async function toggleSiren(btn) {
+            const on = !ctrl.siren;
+            if (on && btn.dataset.confirm !== '1') {
+                // Ketuk dua kali agar sirene tidak terbunyi karena tidak sengaja tersentuh
+                btn.dataset.confirm = '1';
+                btn.classList.add('armed');
+                btn.querySelector('span').textContent = 'Ketuk sekali lagi untuk membunyikan';
+                setTimeout(() => { if (btn.isConnected && btn.dataset.confirm === '1') renderControls(); }, 4000);
+                return;
+            }
+            btn.disabled = true;
+            try {
+                const r = await api(`/api/cctv/${encodeURIComponent(cam.id)}/siren`, {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ on })
+                });
+                ctrl.siren = r.siren;
+                clearTimeout(sirenTimer);
+                if (r.siren) sirenTimer = setTimeout(() => { if (ctrl) { ctrl.siren = false; renderControls(); } }, r.max_seconds * 1000);
+                toast(r.siren ? `Sirene berbunyi (berhenti sendiri setelah ${r.max_seconds} detik)` : 'Sirene dihentikan');
+            } catch (e) {
+                toast(e.message);
+            }
+            renderControls();
+        }
+
+        ctrlEl.addEventListener('click', e => {
+            const b = e.target.closest('[data-ctl]');
+            if (!b || b.disabled || !ctrl) return;
+            const key = b.dataset.ctl;
+            if (key === 'reload') return loadControls();
+            if (key === 'siren') return toggleSiren(b);
+            if (b.dataset.val) {
+                if (ctrl[key] !== b.dataset.val) saveControl({ [key]: b.dataset.val }, b);
+                return;
+            }
+            saveControl({ [key]: !ctrl[key] }, b);
+        });
+
         async function ptz(direction) {
             if (!cam) return;
             if (navigator.vibrate) navigator.vibrate(10);
@@ -731,6 +844,7 @@ const BudiHome = (() => {
             startLive();
             loadRecordings();
             loadBackup();
+            loadControls();
         }
 
         camRow.addEventListener('click', e => { const b = e.target.closest('[data-cam]'); if (b) selectCamera(b.dataset.cam); });
@@ -775,7 +889,7 @@ const BudiHome = (() => {
             } else {
                 loadRecordings(dateRow.querySelector('.active')?.dataset.date);
             }
-            if (initialized) { loadBackup(); loadPush(); }
+            if (initialized) { loadBackup(); loadPush(); loadControls(); }
         }
 
         function hide() {
