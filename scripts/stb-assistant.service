@@ -1,13 +1,13 @@
 [Unit]
-Description=STB Gemini Smart Voice Assistant (Alexa Clone)
+Description=Liliya Home - asisten suara & smart home di STB
 After=network-online.target sound.target
 Wants=network-online.target
 
 [Service]
 Type=simple
 User=root
-WorkingDirectory=/opt/stb-gemini-assistant
-ExecStart=/opt/stb-gemini-assistant/venv/bin/python /opt/stb-gemini-assistant/main.py
+WorkingDirectory=/opt/liliya-home
+ExecStart=/opt/liliya-home/venv/bin/python /opt/liliya-home/main.py
 Restart=always
 RestartSec=5
 Environment=PYTHONUNBUFFERED=1

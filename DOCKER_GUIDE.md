@@ -5,9 +5,9 @@ Seluruh sistem **STB Smart Voice Assistant & Smart Home Display (BUDI)** telah d
 ---
 
 ## 📁 Berkas Docker yang Tersedia:
-- [`Dockerfile`](file:///Users/admin/stb-gemini-assistant/Dockerfile) : Berkas instruksi build image mandiri lengkap dengan dependensi PortAudio, MPV, FFmpeg, Vosk, dan Whisper.
-- [`docker-compose.yml`](file:///Users/admin/stb-gemini-assistant/docker-compose.yml) : Konfigurasi siap pakai dengan passthrough perangkat suara `/dev/snd` dan volume persisten.
-- [`.dockerignore`](file:///Users/admin/stb-gemini-assistant/.dockerignore) : Memastikan virtual environment dan berkas cache tidak ikut ter-build.
+- [`Dockerfile`](Dockerfile) : Berkas instruksi build image mandiri lengkap dengan dependensi PortAudio, MPV, FFmpeg, Vosk, dan Whisper.
+- [`docker-compose.yml`](docker-compose.yml) : Konfigurasi siap pakai dengan passthrough perangkat suara `/dev/snd` dan volume persisten.
+- [`.dockerignore`](.dockerignore) : Memastikan virtual environment dan berkas cache tidak ikut ter-build.
 
 ---
 

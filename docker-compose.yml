@@ -1,7 +1,7 @@
 services:
   stb-assistant:
-    # Ganti USERNAME_GITHUB dengan username akun GitHub Anda (misal: ghcr.io/fazri/stb-gemini-assistant:latest)
-    image: ghcr.io/${GHCR_USERNAME:-fazri}/stb-gemini-assistant:latest
+    # Image dibangun otomatis oleh GitHub Actions (docker-publish.yml) dari repo liliya-home
+    image: ghcr.io/${GHCR_USERNAME:-ahmadfazrinursamsi}/liliya-home:latest
     build:
       context: .
       dockerfile: Dockerfile
