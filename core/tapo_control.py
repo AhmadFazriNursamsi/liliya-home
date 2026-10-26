@@ -1,6 +1,6 @@
 """
 Kontrol kamera Tapo lewat API lokal kamera (pytapo), tanpa cloud TP-Link:
-mode privasi, deteksi gerakan/orang, mode malam, dan sirene.
+mode privasi, deteksi gerakan/orang, mode malam, balik gambar, dan sirene.
 
 Kamera hanya menerima login kontrol sebagai "admin" dengan password akun Tapo
 (cctv.cameras[].tapo_cloud_password di config.yaml). Setelah beberapa login gagal kamera
@@ -78,6 +78,7 @@ class TapoCamera:
             "sensitivity": self._sensitivity_label(motion),
             "night": self.call("getDayNightMode"),
             "person": None,
+            "flip": bool(self.call("getImageFlipVertical")),
         }
         try:
             result["person"] = self.call("getPersonDetection").get("enabled") == "on"
@@ -107,6 +108,8 @@ class TapoCamera:
             self.call("setMotionDetection", enabled, sens or False)
         if "person" in body:
             self.call("setPersonDetection", bool(body["person"]))
+        if "flip" in body:
+            self.call("setImageFlipVertical", bool(body["flip"]))
         if "night" in body:
             if body["night"] not in NIGHT_MODES:
                 raise TapoError("Mode malam harus auto/on/off")
@@ -174,7 +177,7 @@ class TapoControlManager:
             status = await self._run(cam.status)
         except TapoError as e:
             return self._error(e)
-        changes = ", ".join(f"{k}={body[k]}" for k in ("privacy", "motion", "sensitivity", "person", "night") if k in body)
+        changes = ", ".join(f"{k}={body[k]}" for k in ("privacy", "motion", "sensitivity", "person", "night", "flip") if k in body)
         print(f"[Tapo] {cam_id}: {changes}")
         return web.json_response({**status, "siren": cam_id in self._siren_stop})
 

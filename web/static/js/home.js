@@ -749,6 +749,11 @@ const BudiHome = (() => {
                     <span><strong>Mode malam</strong><small>Inframerah = gambar hitam-putih saat gelap</small></span>
                 </div>
                 <div class="ctl-sub ${off ? 'dim' : ''}">${seg('night', NIGHT, ctrl.night, off)}</div>
+                <div class="ctl-row ${off ? 'dim' : ''}">
+                    <i class="fa-solid fa-arrows-up-down"></i>
+                    <span><strong>Balik gambar</strong><small>Nyalakan bila kamera dipasang menggantung di plafon</small></span>
+                    ${sw('flip', ctrl.flip, 'Balik gambar')}
+                </div>
                 <button class="siren-btn ${ctrl.siren ? 'on' : ''}" data-ctl="siren" ${off ? 'disabled' : ''}>
                     <i class="fa-solid fa-bullhorn"></i>
                     <span>${ctrl.siren ? 'Sirene berbunyi · ketuk untuk hentikan' : 'Bunyikan sirene'}</span>
@@ -774,6 +779,7 @@ const BudiHome = (() => {
                 ctrl = await api(`/api/cctv/${encodeURIComponent(cam.id)}/controls`, {
                     method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
                 });
+                if ('flip' in body) toast(body.flip ? 'Gambar dibalik' : 'Gambar kembali normal');
                 if ('privacy' in body) {
                     toast(body.privacy ? 'Mode privasi aktif: kamera tidur' : 'Kamera aktif kembali');
                     if (mode === 'live') setTimeout(startLive, body.privacy ? 0 : 2500);
