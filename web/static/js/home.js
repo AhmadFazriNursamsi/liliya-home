@@ -831,6 +831,8 @@ const BudiHome = (() => {
         async function ptz(direction) {
             if (!cam) return;
             if (navigator.vibrate) navigator.vibrate(10);
+            // Gambar dibalik (kamera menggantung): motor tilt tidak ikut terbalik, jadi atas/bawah ditukar
+            if (ctrl && ctrl.flip && (direction === 'up' || direction === 'down')) direction = direction === 'up' ? 'down' : 'up';
             try {
                 await api(`/api/cctv/${encodeURIComponent(cam.id)}/ptz`, {
                     method: 'POST', headers: { 'Content-Type': 'application/json' },
