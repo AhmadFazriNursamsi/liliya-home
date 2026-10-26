@@ -1,6 +1,6 @@
-# BUDI — Self-Hosted Smart Home Hub on a Recycled TV Set-Top Box
+# Liliya — Self-Hosted Smart Home Hub on a Recycled TV Set-Top Box
 
-**BUDI** turns a discarded ISP set-top box (Amlogic S905X, 4× Cortex-A53, **1.9 GB RAM**) into a
+**Liliya** turns a discarded ISP set-top box (Amlogic S905X, 4× Cortex-A53, **1.9 GB RAM**) into a
 24/7 smart home hub: an AI voice assistant powered by Google Gemini, manual smart-home switches,
 a CCTV recorder (NVR) with live view, pan-tilt and Google Drive backup, plus a native Android app.
 Everything runs on the box itself; both 24/7 video recorders together use about 4% of total CPU.
@@ -97,7 +97,7 @@ Everything runs on the box itself; both 24/7 video recorders together use about 
 - Cookie session login (HMAC-signed, `HttpOnly`, `SameSite=Lax`) with brute-force lockout.
 - Requests from the home LAN / Tailscale are trusted; **traffic from the Cloudflare Tunnel always
   arrives from localhost and is never trusted**, so it must log in.
-- go2rtc's admin API (which can reveal camera credentials) is **not exposed**: BUDI proxies only a
+- go2rtc's admin API (which can reveal camera credentials) is **not exposed**: Liliya proxies only a
   whitelist of player files and the WebSocket for configured stream names.
 - Path-traversal-safe recording file serving; secrets live only in an ignored `config.yaml`.
 
@@ -114,7 +114,7 @@ flowchart LR
     CF["Cloudflare Tunnel<br/>(HTTPS)"]
 
     subgraph STB["Set-top box · Armbian · systemd"]
-        BUDI["BUDI (aiohttp :8080)<br/>auth · WebSocket · REST<br/>Gemini · Whisper · TTS"]
+        BUDI["Liliya (aiohttp :8080)<br/>auth · WebSocket · REST<br/>Gemini · Whisper · TTS"]
         GO2RTC["go2rtc<br/>RTSP restream"]
         REC1["recorder 1080p<br/>ffmpeg -c copy"]
         REC2["recorder 720p<br/>ffmpeg -c copy"]
@@ -207,7 +207,7 @@ Example voice commands (Indonesian): *"Nyalakan lampu teras"*, *"Putar lagu Shei
 ## Known limitations & roadmap
 
 - Tuya does not report on/off state for these Bluetooth bulbs with the project's current instruction mode,
-  so changes made outside BUDI (Smart Life app, wall switch) are only reflected once Tuya reports them.
+  so changes made outside Liliya (Smart Life app, wall switch) are only reflected once Tuya reports them.
 - The free Edge TTS endpoint has started rejecting requests (HTTP 403); evaluating an update or an
   offline TTS fallback.
 - Planned: motion-event timeline for recordings, push notifications, multi-camera layout.
