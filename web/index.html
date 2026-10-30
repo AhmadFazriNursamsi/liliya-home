@@ -15,8 +15,8 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="/static/css/liliya.css?v=20261030_v3">
-    <link rel="stylesheet" href="/static/css/home.css?v=20261030_v17">
+    <link rel="stylesheet" href="/static/css/liliya.css?v=20261031_v4">
+    <link rel="stylesheet" href="/static/css/home.css?v=20261031_v18">
 </head>
 <body class="state-idle">
     <div class="app-container" data-tab="assistant">
@@ -165,6 +165,32 @@
             <div class="rt-list" id="docs-list"><div class="modal-loading"><i class="fa-solid fa-spinner fa-spin"></i> Memuat dokumen...</div></div>
         </section>
 
+        <!-- Unduh video dari link -->
+        <section class="tab-panel" id="panel-unduh">
+            <div class="panel-head">
+                <div>
+                    <h2>Unduh</h2>
+                    <div class="sub" id="unduh-summary">Video TikTok tanpa watermark, YouTube, Instagram &amp; lainnya</div>
+                </div>
+                <div class="pill-row">
+                    <button class="pill-btn icon" id="btn-unduh-refresh" title="Muat ulang" aria-label="Muat ulang"><i class="fa-solid fa-rotate"></i></button>
+                </div>
+            </div>
+            <form class="unduh-form" id="unduh-form" autocomplete="off">
+                <div class="unduh-input">
+                    <i class="fa-solid fa-link"></i>
+                    <input type="text" id="unduh-url" inputmode="url" placeholder="Tempel link video di sini" aria-label="Link video" required>
+                    <button type="button" class="unduh-paste" id="btn-unduh-paste" hidden><i class="fa-regular fa-paste"></i> Tempel</button>
+                </div>
+                <div class="unduh-actions">
+                    <label class="unduh-hd"><input type="checkbox" id="unduh-hd"> <span>Kualitas HD</span></label>
+                    <button type="submit" class="pill-btn primary" id="btn-unduh-go"><i class="fa-solid fa-download"></i> Unduh</button>
+                </div>
+            </form>
+            <div class="rt-note unduh-tip"><i class="fa-brands fa-tiktok"></i> Di HP: buka video di TikTok → <b>Bagikan</b> → <b>Lainnya</b> → pilih <b>Liliya</b>. Video langsung tersimpan tanpa watermark.</div>
+            <div class="rt-list" id="unduh-list"><div class="modal-loading"><i class="fa-solid fa-spinner fa-spin"></i> Memuat...</div></div>
+        </section>
+
         <!-- Modal Tambah / Edit Perangkat -->
         <div class="modal" id="device-modal" role="dialog" aria-modal="true" hidden>
             <div class="modal-card"></div>
@@ -178,9 +204,10 @@
         <button class="tab-btn" data-tab="cctv"><i class="fa-solid fa-video"></i><span>CCTV</span></button>
         <button class="tab-btn" data-tab="router"><i class="fa-solid fa-wifi"></i><span>Router</span></button>
         <button class="tab-btn" data-tab="docs"><i class="fa-solid fa-file-lines"></i><span>Dokumen</span></button>
+        <button class="tab-btn" data-tab="unduh"><i class="fa-solid fa-download"></i><span>Unduh</span></button>
     </nav>
 
-    <script src="/static/js/home.js?v=20261030_v18"></script>
+    <script src="/static/js/home.js?v=20261031_v19"></script>
     <script src="/static/js/tv-nav.js?v=20261030_v2"></script>
     <script>
 // =========================================================

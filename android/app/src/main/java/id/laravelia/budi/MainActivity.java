@@ -47,6 +47,8 @@ import org.json.JSONObject;
 
 import java.util.ArrayList;
 import java.util.function.Consumer;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * Aplikasi Liliya: membungkus dashboard server BUDI (asisten, saklar rumah & CCTV) dalam WebView,
@@ -86,7 +88,9 @@ public class MainActivity extends Activity {
         if (savedInstanceState != null) {
             webView.restoreState(savedInstanceState);
         } else {
-            String hash = opensCctv(getIntent()) ? "/#cctv" : "";
+            String link = sharedLink(getIntent());
+            String hash = link != null ? "/?unduh=" + Uri.encode(link) + "#unduh"
+                    : opensCctv(getIntent()) ? "/#cctv" : "";
             resolveBase(base -> loadBase(base, hash));
         }
 
@@ -102,6 +106,13 @@ public class MainActivity extends Activity {
         // Notifikasi gerakan diketuk saat aplikasi sudah terbuka: langsung ke tab CCTV
         if (opensCctv(intent) && webView != null) {
             webView.evaluateJavascript("window.BudiHome ? BudiHome.setTab('cctv') : (location.hash = 'cctv')", null);
+        }
+        // Link dibagikan dari TikTok dll. saat aplikasi sudah terbuka: langsung unduh di tab Unduh
+        String link = sharedLink(intent);
+        if (link != null && webView != null) {
+            String q = JSONObject.quote(link);
+            webView.evaluateJavascript("window.BudiHome && BudiHome.unduh ? BudiHome.unduh(" + q + ")"
+                    + " : location.assign('/?unduh=' + encodeURIComponent(" + q + ") + '#unduh')", null);
         }
     }
 
@@ -150,6 +161,17 @@ public class MainActivity extends Activity {
 
     private static boolean opensCctv(Intent intent) {
         return intent != null && "cctv".equals(intent.getStringExtra("open"));
+    }
+
+    private static final Pattern LINK = Pattern.compile("https?://\\S+", Pattern.CASE_INSENSITIVE);
+
+    /** Link dari "Bagikan → Liliya" (TikTok mengirim teks berisi kalimat + link). */
+    private static String sharedLink(Intent intent) {
+        if (intent == null || !Intent.ACTION_SEND.equals(intent.getAction())) return null;
+        CharSequence text = intent.getCharSequenceExtra(Intent.EXTRA_TEXT);
+        if (text == null) return null;
+        Matcher m = LINK.matcher(text);
+        return m.find() ? m.group() : null;
     }
 
     // ---------------- Notifikasi (FCM) ----------------
@@ -321,7 +343,7 @@ public class MainActivity extends Activity {
                 req.addRequestHeader("Cookie", CookieManager.getInstance().getCookie(url));
                 req.addRequestHeader("User-Agent", userAgent);
                 req.setTitle(fileName);
-                req.setDescription("Rekaman CCTV Liliya");
+                req.setDescription(url.contains("/api/unduh/") ? "Video dari Liliya" : "Rekaman CCTV Liliya");
                 req.setMimeType(mimeType);
                 req.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED);
                 req.setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, "Liliya/" + fileName);

@@ -163,7 +163,8 @@ a { color: inherit; }
 .app-container[data-tab="home"] > #panel-home,
 .app-container[data-tab="cctv"] > #panel-cctv,
 .app-container[data-tab="router"] > #panel-router,
-.app-container[data-tab="docs"] > #panel-docs {
+.app-container[data-tab="docs"] > #panel-docs,
+.app-container[data-tab="unduh"] > #panel-unduh {
     display: flex;
     animation: fadeIn 0.2s ease;
 }
@@ -402,6 +403,12 @@ a { color: inherit; }
 }
 
 .tab-btn.active { color: var(--brown); }
+
+/* Enam tab di HP sempit: perkecil ikon & label supaya tidak terpotong */
+@media (max-width: 420px) {
+    .tab-btn { min-width: 0; font-size: 0.68rem; }
+    .tab-btn i { width: min(46px, 100%); }
+}
 .tab-btn.active i { background: var(--peach-soft); color: var(--brown-mid); }
 
 /* ---------- Toast ---------- */

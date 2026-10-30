@@ -35,7 +35,7 @@ const BudiHome = (() => {
 
     // ---------- Tabs ----------
     function setTab(tab) {
-        if (!['assistant', 'home', 'cctv', 'router', 'docs'].includes(tab)) tab = 'assistant';
+        if (!['assistant', 'home', 'cctv', 'router', 'docs', 'unduh'].includes(tab)) tab = 'assistant';
         if (appContainer.dataset.tab !== tab) window.scrollTo(0, 0);
         appContainer.dataset.tab = tab;
         document.querySelectorAll('.tab-btn[data-tab]').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
@@ -44,6 +44,7 @@ const BudiHome = (() => {
         if (tab === 'cctv') Cctv.show(); else Cctv.hide();
         if (tab === 'router') Router.show();
         if (tab === 'docs') Docs.show(); else Docs.hide();
+        if (tab === 'unduh') Unduh.show(); else Unduh.hide();
     }
 
     document.querySelectorAll('.tab-btn[data-tab]').forEach(b => b.addEventListener('click', () => setTab(b.dataset.tab)));
@@ -1376,10 +1377,135 @@ const BudiHome = (() => {
         };
     })();
 
+    // ---------- Unduh (video TikTok tanpa watermark, YouTube, Instagram, dll.) ----------
+    const Unduh = (() => {
+        const listBox = document.getElementById('unduh-list');
+        const form = document.getElementById('unduh-form');
+        const input = document.getElementById('unduh-url');
+        const hdBox = document.getElementById('unduh-hd');
+        const goBtn = document.getElementById('btn-unduh-go');
+        const pasteBtn = document.getElementById('btn-unduh-paste');
+        let jobs = [];
+        let pollTimer = null;
+        let visible = false;
+        const autoSave = new Set();     // dimulai dari halaman ini: simpan otomatis begitu siap
+        const saved = new Set();
+
+        const fmtSize = b => b >= 1048576 ? (b / 1048576).toFixed(1).replace('.', ',') + ' MB' : Math.max(1, Math.round(b / 1024)) + ' KB';
+        const fileUrl = j => '/api/unduh/' + encodeURIComponent(j.id) + '/file';
+
+        function render() {
+            if (!jobs.length) {
+                listBox.innerHTML = `<div class="empty-note"><i class="fa-solid fa-film"></i><br>Belum ada unduhan.<br>Tempel link video di atas, atau bagikan dari TikTok ke Liliya.</div>`;
+                return;
+            }
+            listBox.innerHTML = jobs.map(j => {
+                const tiktok = j.site === 'TikTok';
+                let info, action = '';
+                if (j.status === 'working') {
+                    info = '<span class="rt-tag busy"><i class="fa-solid fa-spinner fa-spin"></i> Mengambil video</span>';
+                } else if (j.status === 'error') {
+                    info = `<span class="rt-tag off">Gagal</span> ${esc(j.error || '')}`;
+                    action = `<button class="unduh-save" data-retry="${esc(j.id)}"><i class="fa-solid fa-rotate-right"></i> Ulangi</button>`;
+                } else if (saved.has(j.id)) {
+                    info = '<span class="rt-tag ok"><i class="fa-solid fa-check"></i> Tersimpan</span> Cek folder Download / Galeri';
+                } else {
+                    info = `${esc(j.site || '')} · ${fmtSize(j.size || 0)}${j.author ? ' · @' + esc(j.author) : ''}`;
+                    action = `<a class="unduh-save" href="${fileUrl(j)}" download data-save="${esc(j.id)}"><i class="fa-solid fa-download"></i> Simpan</a>`;
+                }
+                return `<div class="doc-row"><div class="unduh-row">
+                        <span class="unduh-ico ${tiktok ? 'tiktok' : ''}"><i class="${tiktok ? 'fa-brands fa-tiktok' : 'fa-solid fa-film'}"></i></span>
+                        <span class="rt-info"><strong>${esc(j.title || j.url)}</strong><small>${info}</small></span>${action}</div>
+                    <button class="doc-del" data-del="${esc(j.id)}" title="Hapus" aria-label="Hapus"><i class="fa-regular fa-trash-can"></i></button></div>`;
+            }).join('');
+        }
+
+        function save(job) {
+            saved.add(job.id);
+            autoSave.delete(job.id);
+            const a = document.createElement('a');
+            a.href = fileUrl(job);
+            a.download = '';
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            toast('Menyimpan video…');
+        }
+
+        async function load() {
+            try {
+                const data = await api('/api/unduh');
+                // File yang sudah terkirim dihapus server: tetap tampilkan "Tersimpan" selama halaman terbuka
+                const gone = jobs.filter(j => saved.has(j.id) && !data.jobs.some(n => n.id === j.id));
+                jobs = data.jobs.concat(gone.slice(0, 5));
+                jobs.filter(j => j.status === 'ready' && autoSave.has(j.id)).forEach(save);
+                jobs.filter(j => j.status === 'error').forEach(j => autoSave.delete(j.id));
+                render();
+            } catch (e) {
+                listBox.innerHTML = `<div class="empty-note">${esc(e.message)}</div>`;
+            }
+            clearTimeout(pollTimer);
+            if (visible && jobs.some(j => j.status === 'working')) pollTimer = setTimeout(load, 2000);
+        }
+
+        async function start(url, hd) {
+            url = (url || '').trim();
+            if (!url) { input.focus(); return; }
+            goBtn.disabled = true;
+            try {
+                const job = await api('/api/unduh', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ url, hd })
+                });
+                autoSave.add(job.id);
+                input.value = '';
+                jobs.unshift(job);
+                render();
+                load();
+            } catch (e) { toast(e.message); }
+            finally { goBtn.disabled = false; }
+        }
+
+        form.addEventListener('submit', e => { e.preventDefault(); start(input.value, hdBox.checked); });
+        document.getElementById('btn-unduh-refresh').addEventListener('click', load);
+        if (navigator.clipboard && navigator.clipboard.readText) {
+            pasteBtn.hidden = false;
+            pasteBtn.addEventListener('click', async () => {
+                try { input.value = await navigator.clipboard.readText(); }
+                catch (e) { input.focus(); toast('Tekan lama kolom link, lalu pilih Tempel'); }
+            });
+        }
+        listBox.addEventListener('click', async e => {
+            const s = e.target.closest('[data-save]');
+            if (s) { saved.add(s.dataset.save); setTimeout(render, 0); return; }
+            const b = e.target.closest('[data-retry], [data-del]');
+            if (!b) return;
+            const job = jobs.find(j => j.id === (b.dataset.retry || b.dataset.del));
+            if (!job) return;
+            try { await api('/api/unduh/' + encodeURIComponent(job.id), { method: 'DELETE' }); } catch (err) { /* sudah terhapus */ }
+            jobs = jobs.filter(j => j.id !== job.id);
+            render();
+            if (b.dataset.retry) start(job.url, job.hd);
+        });
+
+        return {
+            show: () => { visible = true; load(); },
+            hide: () => { visible = false; clearTimeout(pollTimer); },
+            // Dari "Bagikan → Liliya" di APK (atau /?unduh=<link>)
+            share: url => { setTab('unduh'); start(url, hdBox.checked); }
+        };
+    })();
+
     // ---------- Init ----------
     let initialTab = 'assistant';
     try { initialTab = (location.hash.replace('#', '') || localStorage.getItem('budi_tab') || 'assistant'); } catch (e) {}
-    setTab(initialTab);
+    const shared = new URLSearchParams(location.search).get('unduh');
+    if (shared) {
+        history.replaceState(null, '', '/#unduh');
+        Unduh.share(shared);
+    } else {
+        setTab(initialTab);
+    }
 
-    return { onEvent, setTab, toast };
+    return { onEvent, setTab, toast, unduh: url => Unduh.share(url) };
 })();

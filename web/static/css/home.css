@@ -788,3 +788,21 @@ body.modal-open { overflow: hidden; }
 .doc-ico.word { background: #2B5797; } .doc-ico.sheet { background: #1E7145; } .doc-ico.slides { background: #D04423; } .doc-ico.pdf { background: #C9302C; }
 .rt-tag.busy { background: var(--peach-soft); border-color: var(--peach); color: var(--brown); }
 a.rt-device { text-decoration: none; }
+
+/* ---------- Unduh ---------- */
+.unduh-form { display: flex; flex-direction: column; gap: 10px; padding: 12px; border-radius: 16px; background: var(--surface); border: 1px solid var(--border); }
+.unduh-input { display: flex; align-items: center; gap: 8px; padding: 0 6px 0 12px; min-height: 46px; border-radius: 12px; background: var(--surface-2); border: 1px solid var(--border); }
+.unduh-input:focus-within { border-color: var(--peach-strong); }
+.unduh-input > i { color: var(--text-sub); font-size: 0.85rem; }
+.unduh-input input { flex: 1; min-width: 0; height: 44px; border: 0; background: transparent; font: inherit; font-size: 0.9rem; color: inherit; outline: none; }
+.unduh-paste { flex: none; height: 34px; padding: 0 12px; border: 1px solid var(--border); border-radius: 999px; background: var(--surface); font: inherit; font-size: 0.78rem; font-weight: 600; color: var(--brown); cursor: pointer; }
+.unduh-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.unduh-hd { display: flex; align-items: center; gap: 8px; font-size: 0.82rem; color: var(--text-muted); cursor: pointer; }
+.unduh-hd input { width: 18px; height: 18px; accent-color: var(--peach-strong); }
+.unduh-tip .fa-tiktok { color: #111; }
+.unduh-row { flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; padding: 10px 6px 10px 12px; border-radius: 16px; background: var(--surface); border: 1px solid var(--border); }
+.unduh-ico { flex: 0 0 40px; height: 40px; display: grid; place-items: center; border-radius: 12px; background: var(--peach-soft); color: var(--brown-mid); }
+.unduh-ico.tiktok { background: #111; color: #fff; }
+.unduh-row .rt-info strong { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.unduh-save { flex: none; display: inline-flex; align-items: center; gap: 6px; height: 38px; padding: 0 14px; border-radius: 999px; background: var(--peach); color: var(--brown); font-size: 0.82rem; font-weight: 700; text-decoration: none; }
+.unduh-row .rt-tag.ok { background: #E3F5E8; border-color: #A9DDB7; color: #1E7145; }

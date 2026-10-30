@@ -11,6 +11,7 @@ from core.router import RouterManager
 from core.push import PushManager
 from core.tapo_control import TapoControlManager
 from core.docs import DocsManager
+from core.unduh import UnduhManager
 
 class WebServer:
     def __init__(self, config, event_bridge=None, smart_home_db=None, host="0.0.0.0", port=8080):
@@ -33,6 +34,7 @@ class WebServer:
         self.cctv.push = self.push
         self.tapo = TapoControlManager(config)
         self.docs = DocsManager(config, self.base_dir)
+        self.unduh = UnduhManager(config, self.base_dir)
         VOICE_BROKER.configure(config, self.base_dir)
         self.app = web.Application(middlewares=[self.auth.middleware])
         self._setup_routes()
@@ -75,6 +77,9 @@ class WebServer:
 
         # Penampil dokumen Office/PDF (dibuka dari WhatsApp lewat APK atau dari tab Dokumen)
         self.docs.register_routes(self.app)
+
+        # Unduh video dari link (TikTok tanpa watermark, YouTube, Instagram, dll.)
+        self.unduh.register_routes(self.app)
         VOICE_BROKER.register_routes(self.app)
 
     async def handle_index(self, request):
