@@ -5,6 +5,7 @@ import threading
 from aiohttp import web
 
 from core.web_auth import WebAuth
+from core.remote_tts import BROKER as VOICE_BROKER
 from core.cctv import CCTVManager
 from core.router import RouterManager
 from core.push import PushManager
@@ -32,6 +33,7 @@ class WebServer:
         self.cctv.push = self.push
         self.tapo = TapoControlManager(config)
         self.docs = DocsManager(config, self.base_dir)
+        VOICE_BROKER.configure(config, self.base_dir)
         self.app = web.Application(middlewares=[self.auth.middleware])
         self._setup_routes()
 
@@ -73,6 +75,7 @@ class WebServer:
 
         # Penampil dokumen Office/PDF (dibuka dari WhatsApp lewat APK atau dari tab Dokumen)
         self.docs.register_routes(self.app)
+        VOICE_BROKER.register_routes(self.app)
 
     async def handle_index(self, request):
         index_file = os.path.join(self.web_dir, 'index.html')

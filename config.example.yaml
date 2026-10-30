@@ -46,6 +46,11 @@ tts:
   voice: "id-ID-ArdiNeural"
   rate: "+0%"
   pitch: "+0Hz"
+  # Suara kustom dari pekerja GPU (mis. notebook molab dengan VoxCPM2 + LoRA). Lihat README.
+  # Selama pekerja tidak terhubung, Budi otomatis memakai suara Edge di atas.
+  remote:
+    enabled: false
+    token: ""   # acak, minimal 24 karakter: python3 -c "import secrets;print(secrets.token_urlsafe(32))"
 
 firebase:
   # Sinkronisasi Cloud: Kontrol rumah dari kantor / HP lewat internet
