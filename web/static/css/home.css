@@ -787,3 +787,4 @@ body.modal-open { overflow: hidden; }
 .doc-ico { flex: 0 0 40px; height: 40px; display: grid; place-items: center; border-radius: 12px; color: #fff; font-size: 0.6rem; font-weight: 800; letter-spacing: .02em; background: #8C8C8C; }
 .doc-ico.word { background: #2B5797; } .doc-ico.sheet { background: #1E7145; } .doc-ico.slides { background: #D04423; } .doc-ico.pdf { background: #C9302C; }
 .rt-tag.busy { background: var(--peach-soft); border-color: var(--peach); color: var(--brown); }
+a.rt-device { text-decoration: none; }
