@@ -4,11 +4,13 @@ import android.Manifest;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.app.DownloadManager;
+import android.app.UiModeManager;
 import android.content.ActivityNotFoundException;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.ActivityInfo;
 import android.content.pm.PackageManager;
+import android.content.res.Configuration;
 import android.graphics.Color;
 import android.net.Uri;
 import android.os.Build;
@@ -232,8 +234,15 @@ public class MainActivity extends Activity {
         s.setDatabaseEnabled(true);
         s.setMediaPlaybackRequiresUserGesture(false);
         s.setSupportMultipleWindows(false);
-        s.setUserAgentString(s.getUserAgentString() + " BudiAndroid/" + appVersion());
+        // Penanda "LiliyaTV" membuat dashboard menyalakan navigasi remote (tv-nav.js); HP tidak berubah
+        s.setUserAgentString(s.getUserAgentString() + " BudiAndroid/" + appVersion() + (isTv() ? " LiliyaTV" : ""));
         webView.setBackgroundColor(Color.parseColor("#FBF6EE"));
+        if (isTv()) {
+            // Di TV tidak ada sentuhan: WebView harus memegang fokus agar tombol panah remote sampai ke halaman
+            webView.setFocusable(true);
+            webView.setFocusableInTouchMode(true);
+            webView.requestFocus();
+        }
 
         CookieManager cookies = CookieManager.getInstance();
         cookies.setAcceptCookie(true);
@@ -438,6 +447,13 @@ public class MainActivity extends Activity {
 
     private String getServerUrl() {
         return ServerRoute.serverUrl(this);
+    }
+
+    /** Berjalan di Android TV / Google TV (dikendalikan remote, bukan layar sentuh). */
+    private boolean isTv() {
+        UiModeManager ui = (UiModeManager) getSystemService(UI_MODE_SERVICE);
+        return (ui != null && ui.getCurrentModeType() == Configuration.UI_MODE_TYPE_TELEVISION)
+                || getPackageManager().hasSystemFeature(PackageManager.FEATURE_LEANBACK);
     }
 
     private String appVersion() {
