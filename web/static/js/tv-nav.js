@@ -12,6 +12,8 @@
 
     const style = document.createElement('style');
     style.textContent = `
+        /* Bilah tab bawah menempel di layar: sisakan ruang agar tombol yang difokus tidak tertutup */
+        html.tv-mode { scroll-padding: 96px 0 140px; }
         .tv-mode :focus { outline: none; }
         .tv-mode :focus-visible, .tv-mode .tv-focus {
             outline: 4px solid var(--peach-strong, #F7996A) !important;
@@ -69,7 +71,8 @@
         document.querySelectorAll('.tv-focus').forEach(x => x.classList.remove('tv-focus'));
         el.classList.add('tv-focus');
         el.focus({ preventScroll: true });
-        el.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'smooth' });
+        // Gulir langsung (tanpa animasi): di WebView TV gulir halus kadang berhenti sebelum sampai
+        el.scrollIntoView({ block: 'nearest', inline: 'nearest' });
     }
 
     /** Fokus awal: tombol pertama di tab yang aktif, bukan bilah navigasi bawah. */
