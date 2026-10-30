@@ -35,7 +35,7 @@ const BudiHome = (() => {
 
     // ---------- Tabs ----------
     function setTab(tab) {
-        if (!['assistant', 'home', 'cctv', 'router'].includes(tab)) tab = 'assistant';
+        if (!['assistant', 'home', 'cctv', 'router', 'docs'].includes(tab)) tab = 'assistant';
         if (appContainer.dataset.tab !== tab) window.scrollTo(0, 0);
         appContainer.dataset.tab = tab;
         document.querySelectorAll('.tab-btn[data-tab]').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
@@ -43,6 +43,7 @@ const BudiHome = (() => {
         if (tab === 'home') loadDevices();
         if (tab === 'cctv') Cctv.show(); else Cctv.hide();
         if (tab === 'router') Router.show();
+        if (tab === 'docs') Docs.show(); else Docs.hide();
     }
 
     document.querySelectorAll('.tab-btn[data-tab]').forEach(b => b.addEventListener('click', () => setTab(b.dataset.tab)));
@@ -1266,6 +1267,113 @@ const BudiHome = (() => {
         document.getElementById('btn-router-reboot').addEventListener('click', confirmReboot);
 
         return { show: () => load(false).then(() => { if (!wifi) loadWifi(); }) };
+    })();
+
+    // ---------- Dokumen (Word / Excel / PowerPoint / PDF tanpa iklan) ----------
+    const Docs = (() => {
+        const listBox = document.getElementById('docs-list');
+        const summary = document.getElementById('docs-summary');
+        const fileInput = document.getElementById('docs-file');
+        const progress = document.getElementById('docs-progress');
+        const KIND = { word: 'Word', sheet: 'Excel', slides: 'PowerPoint', pdf: 'PDF' };
+        let docs = [];
+        let pollTimer = null;
+        let visible = false;
+
+        const fmtSize = b => b >= 1048576 ? (b / 1048576).toFixed(1).replace('.', ',') + ' MB' : Math.max(1, Math.round(b / 1024)) + ' KB';
+        function fmtWhen(ts) {
+            const d = new Date(ts * 1000), now = new Date();
+            const time = d.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+            if (d.toDateString() === now.toDateString()) return `Hari ini ${time}`;
+            const y = new Date(now); y.setDate(now.getDate() - 1);
+            if (d.toDateString() === y.toDateString()) return `Kemarin ${time}`;
+            return `${d.getDate()} ${MONTHS_SHORT[d.getMonth()]} ${time}`;
+        }
+
+        function render() {
+            if (!docs.length) {
+                listBox.innerHTML = `<div class="empty-note"><i class="fa-regular fa-folder-open"></i><br>Belum ada dokumen.<br>Ketuk <b>Buka file</b>, atau buka dari WhatsApp lewat aplikasi Liliya.</div>`;
+                return;
+            }
+            listBox.innerHTML = docs.map(d => {
+                const tag = d.status === 'converting' ? '<span class="rt-tag busy"><i class="fa-solid fa-spinner fa-spin"></i> Menyiapkan</span>'
+                    : d.status === 'error' ? '<span class="rt-tag off">Gagal</span>' : '';
+                return `<div class="doc-row">
+                    <a class="rt-device" href="/docs/${encodeURIComponent(d.id)}">
+                        <span class="doc-ico ${esc(d.kind)}">${esc(d.ext.toUpperCase().slice(0, 4))}</span>
+                        <span class="rt-info"><strong>${esc(d.name)}</strong>
+                            <small>${KIND[d.kind] || 'Dokumen'} · ${fmtSize(d.size)} · ${fmtWhen(d.opened)} ${tag}</small></span>
+                        <i class="fa-solid fa-chevron-right"></i></a>
+                    <button class="doc-del" data-del="${esc(d.id)}" title="Hapus" aria-label="Hapus ${esc(d.name)}"><i class="fa-regular fa-trash-can"></i></button>
+                </div>`;
+            }).join('');
+        }
+
+        async function load() {
+            try {
+                const data = await api('/api/docs');
+                docs = data.docs;
+                summary.textContent = docs.length
+                    ? `${docs.length} dokumen · terhapus otomatis bila 30 hari tidak dibuka`
+                    : (data.office ? 'Buka Word, Excel, PowerPoint & PDF tanpa iklan' : 'Baru PDF yang bisa dibuka (LibreOffice belum terpasang)');
+                render();
+            } catch (e) {
+                listBox.innerHTML = `<div class="empty-note">${esc(e.message)}</div>`;
+            }
+            clearTimeout(pollTimer);
+            if (visible && docs.some(d => d.status === 'converting')) pollTimer = setTimeout(load, 2500);
+        }
+
+        function upload(file) {
+            if (!file) return;
+            const nameEl = document.getElementById('docs-progress-name');
+            const pctEl = document.getElementById('docs-progress-pct');
+            const bar = document.getElementById('docs-progress-bar');
+            nameEl.textContent = file.name;
+            pctEl.textContent = '0%';
+            bar.style.width = '0';
+            progress.hidden = false;
+            const xhr = new XMLHttpRequest();
+            xhr.open('POST', '/api/docs');
+            xhr.setRequestHeader('X-Filename', encodeURIComponent(file.name));
+            if (file.type) xhr.setRequestHeader('Content-Type', file.type);
+            xhr.upload.onprogress = e => {
+                if (!e.lengthComputable) return;
+                const pct = Math.round(e.loaded / e.total * 100);
+                bar.style.width = pct + '%';
+                pctEl.textContent = pct < 100 ? pct + '%' : 'Memproses…';
+            };
+            xhr.onload = () => {
+                progress.hidden = true;
+                let body = {};
+                try { body = JSON.parse(xhr.responseText); } catch (e) {}
+                if (xhr.status === 401) { location.href = '/login?next=' + encodeURIComponent('/#docs'); return; }
+                if (xhr.status >= 300 || !body.id) { toast(body.error || `Gagal mengunggah (kode ${xhr.status})`); return; }
+                location.href = '/docs/' + encodeURIComponent(body.id);
+            };
+            xhr.onerror = () => { progress.hidden = true; toast('Koneksi ke server terputus saat mengunggah.'); };
+            xhr.send(file);
+        }
+
+        fileInput.addEventListener('change', () => { upload(fileInput.files[0]); fileInput.value = ''; });
+        document.getElementById('btn-docs-refresh').addEventListener('click', load);
+        listBox.addEventListener('click', async e => {
+            const b = e.target.closest('[data-del]');
+            if (!b) return;
+            const doc = docs.find(d => d.id === b.dataset.del);
+            if (!doc || !confirm(`Hapus "${doc.name}" dari server?`)) return;
+            try {
+                await api('/api/docs/' + encodeURIComponent(doc.id), { method: 'DELETE' });
+                docs = docs.filter(d => d.id !== doc.id);
+                render();
+                toast('Dokumen dihapus');
+            } catch (err) { toast(err.message); }
+        });
+
+        return {
+            show: () => { visible = true; load(); },
+            hide: () => { visible = false; clearTimeout(pollTimer); }
+        };
     })();
 
     // ---------- Init ----------

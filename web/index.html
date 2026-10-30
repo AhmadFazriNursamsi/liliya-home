@@ -15,8 +15,8 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="/static/css/liliya.css?v=20261024_v2">
-    <link rel="stylesheet" href="/static/css/home.css?v=20261025_v15">
+    <link rel="stylesheet" href="/static/css/liliya.css?v=20261030_v3">
+    <link rel="stylesheet" href="/static/css/home.css?v=20261030_v16">
 </head>
 <body class="state-idle">
     <div class="app-container" data-tab="assistant">
@@ -144,6 +144,27 @@
             <div class="rt-list" id="router-devices"><div class="modal-loading"><i class="fa-solid fa-spinner fa-spin"></i> Menghubungi router...</div></div>
         </section>
 
+        <!-- Dokumen -->
+        <section class="tab-panel" id="panel-docs">
+            <div class="panel-head">
+                <div>
+                    <h2>Dokumen</h2>
+                    <div class="sub" id="docs-summary">Buka Word, Excel, PowerPoint &amp; PDF tanpa iklan</div>
+                </div>
+                <div class="pill-row">
+                    <button class="pill-btn icon" id="btn-docs-refresh" title="Muat ulang" aria-label="Muat ulang"><i class="fa-solid fa-rotate"></i></button>
+                    <label class="pill-btn primary" id="btn-docs-upload"><i class="fa-solid fa-arrow-up-from-bracket"></i> Buka file
+                        <input type="file" id="docs-file" hidden accept=".pdf,.doc,.docx,.docm,.dot,.dotx,.odt,.ott,.rtf,.txt,.xls,.xlsx,.xlsm,.xlsb,.ods,.csv,.tsv,.ppt,.pptx,.pptm,.pps,.ppsx,.odp"></label>
+                </div>
+            </div>
+            <div class="doc-upload" id="docs-progress" hidden>
+                <div class="doc-upload-row"><strong id="docs-progress-name"></strong><span id="docs-progress-pct"></span></div>
+                <div class="doc-bar"><span id="docs-progress-bar"></span></div>
+            </div>
+            <div class="rt-note doc-tip"><i class="fa-brands fa-whatsapp"></i> Di HP: buka dokumen di WhatsApp → <b>Buka dengan</b> (atau <b>Bagikan</b>) → pilih <b>Liliya</b>.</div>
+            <div class="rt-list" id="docs-list"><div class="modal-loading"><i class="fa-solid fa-spinner fa-spin"></i> Memuat dokumen...</div></div>
+        </section>
+
         <!-- Modal Tambah / Edit Perangkat -->
         <div class="modal" id="device-modal" role="dialog" aria-modal="true" hidden>
             <div class="modal-card"></div>
@@ -156,9 +177,10 @@
         <button class="tab-btn" data-tab="home"><i class="fa-solid fa-house"></i><span>Rumah</span></button>
         <button class="tab-btn" data-tab="cctv"><i class="fa-solid fa-video"></i><span>CCTV</span></button>
         <button class="tab-btn" data-tab="router"><i class="fa-solid fa-wifi"></i><span>Router</span></button>
+        <button class="tab-btn" data-tab="docs"><i class="fa-solid fa-file-lines"></i><span>Dokumen</span></button>
     </nav>
 
-    <script src="/static/js/home.js?v=20261026_v17"></script>
+    <script src="/static/js/home.js?v=20261030_v18"></script>
     <script>
 // =========================================================
 // Liliya — Asisten suara (WebSocket ke server BUDI)

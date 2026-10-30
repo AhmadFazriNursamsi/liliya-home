@@ -769,3 +769,21 @@ body.modal-open { overflow: hidden; }
 .ctl-error { display: flex; align-items: center; gap: 10px; padding: 8px 0 2px; font-size: 0.8rem; color: var(--text-muted); }
 .ctl-error > i { color: var(--peach-strong); }
 .ctl-error > span { flex: 1; }
+
+/* ---------- Dokumen ---------- */
+#btn-docs-upload { cursor: pointer; }
+.doc-tip { margin-bottom: 2px; }
+.doc-tip .fa-whatsapp { color: #25D366; }
+.doc-upload { padding: 12px; border-radius: 16px; background: var(--surface); border: 1px solid var(--border); }
+.doc-upload-row { display: flex; justify-content: space-between; gap: 12px; font-size: 0.85rem; margin-bottom: 8px; }
+.doc-upload-row strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.doc-upload-row span { color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.doc-bar { height: 6px; border-radius: 99px; background: var(--peach-soft); overflow: hidden; }
+.doc-bar span { display: block; height: 100%; width: 0; border-radius: inherit; background: var(--peach-strong); transition: width .2s; }
+.doc-row { display: flex; align-items: center; gap: 4px; }
+.doc-row .rt-device { flex: 1; min-width: 0; }
+.doc-del { flex: 0 0 44px; height: 44px; border: 0; border-radius: 12px; background: transparent; color: var(--text-sub); cursor: pointer; }
+.doc-del:active { background: #FBE4E1; color: var(--red); }
+.doc-ico { flex: 0 0 40px; height: 40px; display: grid; place-items: center; border-radius: 12px; color: #fff; font-size: 0.6rem; font-weight: 800; letter-spacing: .02em; background: #8C8C8C; }
+.doc-ico.word { background: #2B5797; } .doc-ico.sheet { background: #1E7145; } .doc-ico.slides { background: #D04423; } .doc-ico.pdf { background: #C9302C; }
+.rt-tag.busy { background: var(--peach-soft); border-color: var(--peach); color: var(--brown); }

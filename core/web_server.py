@@ -9,6 +9,7 @@ from core.cctv import CCTVManager
 from core.router import RouterManager
 from core.push import PushManager
 from core.tapo_control import TapoControlManager
+from core.docs import DocsManager
 
 class WebServer:
     def __init__(self, config, event_bridge=None, smart_home_db=None, host="0.0.0.0", port=8080):
@@ -30,6 +31,7 @@ class WebServer:
         self.push = PushManager(config, self.base_dir)
         self.cctv.push = self.push
         self.tapo = TapoControlManager(config)
+        self.docs = DocsManager(config, self.base_dir)
         self.app = web.Application(middlewares=[self.auth.middleware])
         self._setup_routes()
 
@@ -68,6 +70,9 @@ class WebServer:
 
         # Notifikasi FCM ke APK (gerakan CCTV)
         self.push.register_routes(self.app)
+
+        # Penampil dokumen Office/PDF (dibuka dari WhatsApp lewat APK atau dari tab Dokumen)
+        self.docs.register_routes(self.app)
 
     async def handle_index(self, request):
         index_file = os.path.join(self.web_dir, 'index.html')

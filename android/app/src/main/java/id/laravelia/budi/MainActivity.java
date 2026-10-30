@@ -43,9 +43,6 @@ import com.google.firebase.messaging.FirebaseMessaging;
 
 import org.json.JSONObject;
 
-import java.io.InputStream;
-import java.net.HttpURLConnection;
-import java.net.URL;
 import java.util.ArrayList;
 import java.util.function.Consumer;
 
@@ -55,11 +52,10 @@ import java.util.function.Consumer;
  */
 public class MainActivity extends Activity {
 
-    private static final String PREFS = "budi";
-    private static final String KEY_URL = "server_url";
-    private static final String DEFAULT_URL = "https://smarthome.laravelia.my.id";
-    private static final String LAN_URL = "http://192.168.1.5:8080";
-    private static final String OLD_LAN_URL = "http://192.168.1.3:8080";   // IP STB sebelum 24 Okt 2026
+    private static final String PREFS = ServerRoute.PREFS;
+    private static final String KEY_URL = ServerRoute.KEY_URL;
+    private static final String DEFAULT_URL = ServerRoute.DEFAULT_URL;
+    private static final String LAN_URL = ServerRoute.LAN_URL;
     private static final int REQ_MIC = 1;
     private static final int REQ_NOTIF = 2;
 
@@ -109,9 +105,8 @@ public class MainActivity extends Activity {
 
     // ---------------- Jalur otomatis: WiFi rumah vs Cloudflare ----------------
 
-    /** Mode otomatis aktif selama pengguna tidak mengisi alamat server sendiri. */
     private boolean autoRoute() {
-        return DEFAULT_URL.equals(getServerUrl());
+        return ServerRoute.autoRoute(this);
     }
 
     /**
@@ -124,30 +119,9 @@ public class MainActivity extends Activity {
             return;
         }
         new Thread(() -> {
-            String base = isLiliyaReachable(LAN_URL) ? LAN_URL : DEFAULT_URL;
+            String base = ServerRoute.resolveBlocking(this);
             runOnUiThread(() -> done.accept(base));
         }).start();
-    }
-
-    private static boolean isLiliyaReachable(String base) {
-        HttpURLConnection c = null;
-        try {
-            c = (HttpURLConnection) new URL(base + "/").openConnection();
-            c.setConnectTimeout(1200);
-            c.setReadTimeout(1500);
-            c.setInstanceFollowRedirects(false);
-            if (c.getResponseCode() != 200) return false;
-            // Pastikan benar-benar server Liliya, bukan perangkat lain yang kebetulan memakai IP sama
-            byte[] buf = new byte[2048];
-            try (InputStream in = c.getInputStream()) {
-                int n = in.read(buf);
-                return n > 0 && new String(buf, 0, n, "UTF-8").contains("Liliya");
-            }
-        } catch (Exception e) {
-            return false;
-        } finally {
-            if (c != null) c.disconnect();
-        }
     }
 
     private void loadBase(String base, String pathAndHash) {
@@ -463,13 +437,7 @@ public class MainActivity extends Activity {
     }
 
     private String getServerUrl() {
-        SharedPreferences p = getSharedPreferences(PREFS, MODE_PRIVATE);
-        String url = p.getString(KEY_URL, DEFAULT_URL);
-        if (OLD_LAN_URL.equals(url)) {
-            url = LAN_URL;
-            p.edit().putString(KEY_URL, url).apply();
-        }
-        return url;
+        return ServerRoute.serverUrl(this);
     }
 
     private String appVersion() {

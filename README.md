@@ -93,6 +93,17 @@ Everything runs on the box itself; both 24/7 video recorders together use about 
   - external links (YouTube) opened in their own apps, switchable server URL (internet / home Wi-Fi).
 - **Built, signed and published by GitHub Actions** on every change to `android/`.
 
+### 📄 Ad-free document viewer
+- Open **Word, Excel, PowerPoint, OpenDocument, RTF, CSV, TXT and PDF** straight from WhatsApp:
+  *Open with* / *Share* → **Liliya**. No third-party viewer app, no ads, documents stay on the box.
+- The STB converts Office files to PDF with **headless LibreOffice** (fonts metric-compatible with
+  Calibri/Cambria/Arial), one conversion at a time at low CPU priority so voice and CCTV stay smooth.
+  Spreadsheets are exported **one sheet per page** so wide tables are never split.
+- Shown with self-hosted **pdf.js**: pinch / double-tap zoom, text search and copy, page counter,
+  original-file download, password-protected PDFs. Same content is never converted twice (SHA-256),
+  and documents not opened for 30 days are deleted automatically.
+- Also available as the **Dokumen** tab in the dashboard (upload from a computer, history, delete).
+
 ### 🔐 Security
 - Cookie session login (HMAC-signed, `HttpOnly`, `SameSite=Lax`) with brute-force lockout.
 - Requests from the home LAN / Tailscale are trusted; **traffic from the Cloudflare Tunnel always
