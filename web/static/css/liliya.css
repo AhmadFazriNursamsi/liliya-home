@@ -140,6 +140,7 @@ a { color: inherit; }
 }
 
 .icon-btn:hover { background: var(--peach-soft); color: var(--text); }
+.icon-btn.voice-gpu.online { color: var(--green); }
 
 .conn-dot {
     width: 8px;

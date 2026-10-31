@@ -15,7 +15,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="/static/css/liliya.css?v=20261031_v4">
+    <link rel="stylesheet" href="/static/css/liliya.css?v=20261031_v5">
     <link rel="stylesheet" href="/static/css/home.css?v=20261031_v19">
 </head>
 <body class="state-idle">
@@ -28,6 +28,7 @@
                 <span class="brand-name">Liliya</span>
             </div>
             <div class="header-actions">
+                <button class="icon-btn voice-gpu" id="btn-voice-gpu" title="Suara GPU" aria-label="Suara GPU" hidden><i class="fa-solid fa-microchip"></i></button>
                 <span class="conn-dot" id="conn-dot" title="Terhubung"></span>
                 <button class="icon-btn" id="btn-app-settings" title="Pengaturan aplikasi" aria-label="Pengaturan aplikasi" hidden><i class="fa-solid fa-gear"></i></button>
                 <a class="icon-btn" href="/logout" title="Keluar" aria-label="Keluar"><i class="fa-solid fa-arrow-right-from-bracket"></i></a>
@@ -426,6 +427,33 @@ btnStopMusic.addEventListener('click', () => {
         ws.send(JSON.stringify({ type: "media_control", action: "stop" }));
     }
 });
+
+// ---------- Suara GPU (notebook molab) ----------
+// Hijau = pekerja suara di notebook terhubung. Ketuk untuk membuka notebook lalu Run all.
+const btnVoiceGpu = document.getElementById('btn-voice-gpu');
+let voiceNotebookUrl = '';
+
+async function refreshVoiceGpu() {
+    try {
+        const r = await fetch('/api/voice/status', { cache: 'no-store' });
+        if (!r.ok) return;
+        const s = await r.json();
+        voiceNotebookUrl = s.notebook_url || '';
+        btnVoiceGpu.hidden = !s.enabled || !voiceNotebookUrl;
+        btnVoiceGpu.classList.toggle('online', !!s.online);
+        btnVoiceGpu.title = s.online
+            ? 'Suara GPU aktif (ketuk untuk membuka notebook)'
+            : 'Suara GPU mati: ketuk untuk membuka notebook lalu klik Run all';
+    } catch (e) {}
+}
+
+btnVoiceGpu.addEventListener('click', () => {
+    if (!voiceNotebookUrl) return;
+    if (nativeApp && nativeApp.openExternal) nativeApp.openExternal(voiceNotebookUrl); else window.open(voiceNotebookUrl, '_blank', 'noopener');
+});
+
+refreshVoiceGpu();
+setInterval(refreshVoiceGpu, 30000);
 
 setOrbState("idle");
 connectWebSocket();

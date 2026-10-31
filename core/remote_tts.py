@@ -90,6 +90,7 @@ class VoiceBroker:
         cfg = (config.get("tts", {}) or {}).get("remote", {}) or {}
         self.enabled = bool(cfg.get("enabled", False))
         self.token = str(cfg.get("token", "") or "")
+        self.notebook_url = str(cfg.get("notebook_url", "") or "")  # notebook GPU yang menjalankan pekerja
         self.base_dir = base_dir
         if self.enabled and len(self.token) < 24:
             print("[VoiceBroker Warning] tts.remote.token kosong/terlalu pendek. Suara kustom dimatikan.")
@@ -174,6 +175,7 @@ class VoiceBroker:
             "last_seen_s": round(time.time() - self._last_seen, 1) if self._last_seen else None,
             "queue": len(self._queue),
             "worker": self.worker,
+            "notebook_url": getattr(self, "notebook_url", ""),
             **self.stats,
         }
 
