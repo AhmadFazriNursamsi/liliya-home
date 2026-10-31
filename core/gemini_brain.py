@@ -39,6 +39,7 @@ class GeminiBrain:
         self.system_ctrl = skills.get("system")
         self.smart_home = skills.get("smart_home")
         self.prayer_times = skills.get("prayer_times")
+        self.door_lock = skills.get("door_lock")
         
         # Validasi API Keys
         self.valid_keys = [k for k in self.api_keys if k and "MASUKKAN_GEMINI" not in k]
@@ -136,6 +137,12 @@ class GeminiBrain:
                 self.prayer_times.get_prayer_times,
                 self.prayer_times.get_next_prayer
             ])
+        if self.door_lock:
+            tools.extend([
+                self.door_lock.lock_door,
+                self.door_lock.unlock_door,
+                self.door_lock.get_door_status
+            ])
         return tools
 
     def _create_chat_session(self, model_name: str):
@@ -206,6 +213,15 @@ class GeminiBrain:
         if m_turn_on and self.smart_home:
             dev_target = m_turn_on.group(2).strip()
             return self.smart_home.control_smart_home_device(dev_target, "turn_on")
+
+        # Kunci pintu (membuka kunci lewat suara sengaja ditolak, lihat DoorLockSkill)
+        if self.door_lock:
+            if re.match(r'^(kunci|kuncikan|tolong kunci)\s+(pintu|pintunya|pintu depan)$', t_clean):
+                return self.door_lock.lock_door()
+            if re.match(r'^(buka kunci|buka)\s+(pintu|pintunya|pintu depan)$', t_clean):
+                return self.door_lock.unlock_door()
+            if re.match(r'^(status pintu|cek pintu|pintu sudah dikunci\??|apakah pintu sudah dikunci\??|pintu terkunci\??)$', t_clean):
+                return self.door_lock.get_door_status()
 
         # 4. Permintaan memutar adzan manual (dibatasi hanya saat waktu sholat tiba secara otomatis)
         if any(w in t_clean for w in ["putar adzan", "bunyikan adzan", "kumandangkan adzan", "mainkan adzan", "nyalakan adzan", "setel adzan", "adzan"]):

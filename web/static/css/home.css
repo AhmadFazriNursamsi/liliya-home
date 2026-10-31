@@ -809,3 +809,24 @@ a.rt-device { text-decoration: none; }
 .unduh-row .rt-info strong { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .unduh-save { flex: none; display: inline-flex; align-items: center; gap: 6px; height: 38px; padding: 0 14px; border-radius: 999px; background: var(--peach); color: var(--brown); font-size: 0.82rem; font-weight: 700; text-decoration: none; }
 .unduh-row .rt-tag.ok { background: #E3F5E8; border-color: #A9DDB7; color: #1E7145; }
+
+/* ---------- Kunci pintu ---------- */
+.door-card {
+    margin-bottom: 16px;
+    padding: 14px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+}
+.door-head { display: flex; align-items: center; gap: 12px; }
+.door-ico {
+    display: grid; place-items: center; flex: none;
+    width: 42px; height: 42px; border-radius: 12px;
+    background: var(--surface-2); color: var(--brown-mid); font-size: 1.05rem;
+}
+.door-ico.locked { background: var(--peach-soft); color: var(--brown); }
+.door-ico.open { background: #FBE4E1; color: var(--red); }
+.door-log { list-style: none; margin: 12px 0 0; padding: 10px 0 0; border-top: 1px solid var(--border); }
+.door-log li { display: flex; gap: 10px; padding: 3px 0; font-size: 0.78rem; color: var(--text-muted); }
+.door-log time { flex: none; width: 76px; font-variant-numeric: tabular-nums; color: var(--text-sub); }
+.door-log code { font-family: var(--font-mono); font-size: 0.72rem; }

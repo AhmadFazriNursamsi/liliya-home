@@ -40,7 +40,7 @@ const BudiHome = (() => {
         appContainer.dataset.tab = tab;
         document.querySelectorAll('.tab-btn[data-tab]').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
         try { localStorage.setItem('budi_tab', tab); } catch (e) {}
-        if (tab === 'home') loadDevices();
+        if (tab === 'home') { loadDevices(); DoorLock.load(); }
         if (tab === 'cctv') Cctv.show(); else Cctv.hide();
         if (tab === 'router') Router.show();
         if (tab === 'docs') Docs.show(); else Docs.hide();
@@ -203,6 +203,8 @@ const BudiHome = (() => {
     function onEvent(data) {
         if (data.type === 'smart_home_sync' && Array.isArray(data.devices)) {
             replaceDevices(data.devices);
+        } else if (data.type === 'door_lock' && data.status) {
+            DoorLock.update(data.status);
         } else if (data.type === 'smart_home_device_update' && data.device) {
             if (!pending.has(data.device.id)) {
                 devices.set(data.device.id, data.device);
@@ -1577,6 +1579,79 @@ const BudiHome = (() => {
             // Dari "Bagikan → Liliya" di APK (atau /?unduh=<link>)
             share: url => { setTab('unduh'); start(url, hdBox.checked); }
         };
+    })();
+
+    // ---------- Kunci pintu (ESP32 RFID + servo + sensor pintu) ----------
+    const DoorLock = (() => {
+        const box = document.getElementById('door-lock');
+        let st = null;
+        let busy = false;
+        let armed = false;      // buka kunci perlu dua ketukan agar tidak terpencet
+        let armTimer = null;
+
+        function fmtTime(ts) {
+            const d = new Date(ts * 1000);
+            const today = new Date().toDateString() === d.toDateString();
+            const hm = d.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+            return today ? hm : `${d.getDate()} ${MONTHS_SHORT[d.getMonth()]} ${hm}`;
+        }
+
+        function render() {
+            if (!box || !st) return;
+            box.hidden = false;
+            const locked = st.locked !== false;
+            const door = st.door_closed === true ? 'pintu tertutup' : st.door_closed === false ? 'pintu terbuka' : 'pintu belum terbaca';
+            const offline = st.online ? '' : `<span class="rt-tag off">${st.last_seen_s == null ? 'Belum terhubung' : 'Offline'}</span>`;
+            const label = busy ? '<i class="fa-solid fa-spinner fa-spin"></i> Menunggu'
+                : locked ? (armed ? '<i class="fa-solid fa-lock-open"></i> Ketuk lagi' : '<i class="fa-solid fa-lock-open"></i> Buka')
+                : '<i class="fa-solid fa-lock"></i> Kunci';
+            const log = (st.history || []).slice(0, 6).map(h => `<li><time>${fmtTime(h.ts)}</time><span>${esc(h.text)}${h.by ? ` · ${esc(h.by)}` : ''}${h.detail ? ` <code>${esc(h.detail)}</code>` : ''}</span></li>`).join('');
+            box.innerHTML = `
+                <div class="door-head">
+                    <span class="door-ico ${locked ? 'locked' : 'open'}"><i class="fa-solid ${locked ? 'fa-lock' : 'fa-lock-open'}"></i></span>
+                    <span class="rt-info"><strong>${esc(st.name)}</strong>
+                        <small>${locked ? 'Terkunci' : 'Tidak terkunci'} · ${door} ${offline}</small></span>
+                    <button class="pill-btn ${armed ? 'danger' : locked ? 'primary' : ''}" id="door-toggle" ${!st.online || busy ? 'disabled' : ''}>${label}</button>
+                </div>
+                ${log ? `<ul class="door-log">${log}</ul>` : ''}`;
+        }
+
+        async function load() {
+            try { st = await api('/api/door/status'); render(); } catch (e) { /* kartu tetap tersembunyi */ }
+        }
+
+        async function toggle() {
+            if (!st || busy) return;
+            const action = st.locked !== false ? 'unlock' : 'lock';
+            if (action === 'unlock' && !armed) {
+                armed = true;
+                render();
+                clearTimeout(armTimer);
+                armTimer = setTimeout(() => { armed = false; render(); }, 3000);
+                return;
+            }
+            armed = false;
+            clearTimeout(armTimer);
+            busy = true;
+            render();
+            try {
+                const r = await api('/api/door/command', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action })
+                });
+                st = r.status;
+                toast(action === 'unlock' ? 'Kunci pintu dibuka' : 'Pintu dikunci');
+            } catch (e) {
+                toast(e.message);
+                load();
+            }
+            busy = false;
+            render();
+        }
+
+        box?.addEventListener('click', e => { if (e.target.closest('#door-toggle')) toggle(); });
+        return { load, update: s => { st = s; if (!busy) render(); } };
     })();
 
     // ---------- Init ----------
