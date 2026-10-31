@@ -91,8 +91,14 @@ class TTSEngine:
             except Exception:
                 pass
 
-    def play_filler(self):
-        """Memutar feedback jeda instan ('Sebentar ya...', 'Tunggu sebentar...')."""
+    def play_filler(self, done=None, delay: float = 0.0):
+        """Memutar feedback jeda ('Sebentar ya...', 'Tunggu sebentar...').
+
+        Bila `done` (threading.Event) sudah diset sebelum `delay` detik, filler dilewati:
+        perintah cepat seperti "matikan lampu" langsung dijawab tanpa "sebentar".
+        """
+        if done is not None and done.wait(delay):
+            return
         if not self.filler_files:
             self.filler_files = [f for f in glob.glob(os.path.join(self.sounds_dir, "*.mp3")) if not os.path.basename(f).lower().startswith("adzan")]
         files = self.filler_files

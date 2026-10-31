@@ -31,6 +31,9 @@ from skills.system_control import SystemControlSkill
 from skills.smart_home import SmartHomeSkill
 from skills.prayer_times import PrayerTimesSkill
 
+# Filler "sebentar" hanya diputar bila jawaban belum siap dalam waktu ini (perintah cepat tanpa filler)
+FILLER_DELAY_S = 0.8
+
 class EventBridge:
     def __init__(self, gemini_brain, tts_engine, media_player, sys_ctrl, audio_engine, smart_home_db=None, web_server=None, stt_engine=None):
         self.gemini = gemini_brain
@@ -89,11 +92,13 @@ class EventBridge:
             self.broadcast_user_command(text)
             self.broadcast_state("thinking")
             self.broadcast_assistant_reply("Sedang diproses...")
-            # Suara jeda diputar bersamaan dengan permintaan ke Gemini (tidak saling menunggu)
-            filler = threading.Thread(target=self.tts.play_filler, daemon=True)
+            # Suara jeda hanya bila jawaban belum siap dalam FILLER_DELAY_S (perintah cepat langsung dijawab)
+            done = threading.Event()
+            filler = threading.Thread(target=self.tts.play_filler, args=(done, FILLER_DELAY_S), daemon=True)
             filler.start()
             
             user_txt, response = self.gemini.process_text_command(text)
+            done.set()
             filler.join()
             self.broadcast_assistant_reply(response)
             self.broadcast_state("speaking")
@@ -285,11 +290,13 @@ def main():
                         bridge.broadcast_state("thinking")
                         bridge.broadcast_assistant_reply("Sedang diproses...")
                         
-                        filler = threading.Thread(target=tts.play_filler, daemon=True)
+                        done = threading.Event()
+                        filler = threading.Thread(target=tts.play_filler, args=(done, FILLER_DELAY_S), daemon=True)
                         filler.start()
                         
                         # Kirim teks bersih ke Gemini
                         user_txt, response_text = gemini.process_text_command(user_text)
+                        done.set()
                         filler.join()
                         
                         # Tampilkan balasan BUDI di layar dan bacakan
