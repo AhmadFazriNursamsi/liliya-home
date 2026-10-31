@@ -508,6 +508,7 @@ const BudiHome = (() => {
             clearStage();
             setBadge(quality === 'hd' ? 'LIVE · HD' : 'LIVE', false);
             ptzPad.hidden = !cam.ptz;
+            updateTalk();
             btnLive.classList.add('active');
             btnQuality.hidden = false;
             btnSound.hidden = false;
@@ -534,6 +535,7 @@ const BudiHome = (() => {
             currentFile = file;
             clearStage();
             ptzPad.hidden = true;
+            updateTalk();
             btnLive.classList.remove('active');
             btnQuality.hidden = true;
             btnSound.hidden = true;
@@ -711,10 +713,9 @@ const BudiHome = (() => {
                     </div></div>`).join('');
         }
 
-        // ---------- Kontrol kamera Tapo (privasi, deteksi, mode malam, sirene) ----------
+        // ---------- Kontrol kamera Tapo (privasi, deteksi, mode malam, balik gambar) ----------
         const ctrlEl = document.getElementById('cctv-controls');
         let ctrl = null;
-        let sirenTimer = null;
         const SENS = [['low', 'Rendah'], ['normal', 'Normal'], ['high', 'Tinggi']];
         const NIGHT = [['auto', 'Otomatis'], ['on', 'Inframerah'], ['off', 'Mati']];
         const seg = (key, opts, value, disabled) => `<div class="seg-ctl" role="radiogroup">${opts.map(([v, l]) =>
@@ -722,6 +723,7 @@ const BudiHome = (() => {
         const sw = (key, on, label) => `<button class="switch ${on ? 'on' : ''}" data-ctl="${key}" role="switch" aria-checked="${on}" aria-label="${label}"><span></span></button>`;
 
         function renderControls() {
+            updateTalk();
             if (!ctrl) return;
             if (ctrl.error) {
                 ctrlEl.innerHTML = `<div class="ctl-error"><i class="fa-solid fa-triangle-exclamation"></i><span>${esc(ctrl.error)}</span>
@@ -755,11 +757,7 @@ const BudiHome = (() => {
                     <i class="fa-solid fa-arrows-up-down"></i>
                     <span><strong>Balik gambar</strong><small>Nyalakan bila kamera dipasang menggantung di plafon</small></span>
                     ${sw('flip', ctrl.flip, 'Balik gambar')}
-                </div>
-                <button class="siren-btn ${ctrl.siren ? 'on' : ''}" data-ctl="siren" ${off ? 'disabled' : ''}>
-                    <i class="fa-solid fa-bullhorn"></i>
-                    <span>${ctrl.siren ? 'Sirene berbunyi · ketuk untuk hentikan' : 'Bunyikan sirene'}</span>
-                </button>`;
+                </div>`;
         }
 
         async function loadControls() {
@@ -767,7 +765,7 @@ const BudiHome = (() => {
             try {
                 ctrl = await api(`/api/cctv/${encodeURIComponent(cam.id)}/controls`);
             } catch (e) {
-                if (e.message === 'Error 404') { ctrlEl.hidden = true; return; }   // kamera tanpa kontrol Tapo
+                if (e.message === 'Error 404') { ctrl = null; updateTalk(); ctrlEl.hidden = true; return; }   // kamera tanpa kontrol Tapo
                 ctrl = { error: e.message };
             }
             renderControls();
@@ -792,37 +790,11 @@ const BudiHome = (() => {
             renderControls();
         }
 
-        async function toggleSiren(btn) {
-            const on = !ctrl.siren;
-            if (on && btn.dataset.confirm !== '1') {
-                // Ketuk dua kali agar sirene tidak terbunyi karena tidak sengaja tersentuh
-                btn.dataset.confirm = '1';
-                btn.classList.add('armed');
-                btn.querySelector('span').textContent = 'Ketuk sekali lagi untuk membunyikan';
-                setTimeout(() => { if (btn.isConnected && btn.dataset.confirm === '1') renderControls(); }, 4000);
-                return;
-            }
-            btn.disabled = true;
-            try {
-                const r = await api(`/api/cctv/${encodeURIComponent(cam.id)}/siren`, {
-                    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ on })
-                });
-                ctrl.siren = r.siren;
-                clearTimeout(sirenTimer);
-                if (r.siren) sirenTimer = setTimeout(() => { if (ctrl) { ctrl.siren = false; renderControls(); } }, r.max_seconds * 1000);
-                toast(r.siren ? `Sirene berbunyi (berhenti sendiri setelah ${r.max_seconds} detik)` : 'Sirene dihentikan');
-            } catch (e) {
-                toast(e.message);
-            }
-            renderControls();
-        }
-
         ctrlEl.addEventListener('click', e => {
             const b = e.target.closest('[data-ctl]');
             if (!b || b.disabled || !ctrl) return;
             const key = b.dataset.ctl;
             if (key === 'reload') return loadControls();
-            if (key === 'siren') return toggleSiren(b);
             if (b.dataset.val) {
                 if (ctrl[key] !== b.dataset.val) saveControl({ [key]: b.dataset.val }, b);
                 return;
@@ -844,6 +816,116 @@ const BudiHome = (() => {
                 toast('Gagal menggerakkan kamera');
             }
         }
+
+        // ---------- Bicara lewat speaker kamera: tahan tombol, bicara, lepas untuk mengirim (seperti Tapo) ----------
+        const talkBtn = document.getElementById('btn-cctv-talk');
+        const TALK_MAX_MS = 30000;
+        const TALK_MIN_MS = 600;
+        let talk = null;        // sesi rekaman yang sedang berjalan
+        let talkSending = false;
+
+        function updateTalk() {
+            talkBtn.hidden = !(mode === 'live' && ctrl && !ctrl.error && ctrl.talk && !ctrl.privacy);
+            if (talkBtn.hidden && talk) talk.stop(false);
+        }
+
+        function talkUi(state, text) {
+            talkBtn.classList.toggle('rec', state === 'rec');
+            talkBtn.classList.toggle('busy', state === 'busy');
+            talkBtn.querySelector('span').textContent = text || '';
+        }
+
+        async function sendTalk(blob) {
+            if (!cam) return;
+            talkSending = true;
+            talkUi('busy', 'Diputar di kamera…');
+            try {
+                const r = await api(`/api/cctv/${encodeURIComponent(cam.id)}/talk`, {
+                    method: 'POST', headers: { 'Content-Type': blob.type || 'application/octet-stream' }, body: blob
+                });
+                toast(`Suara terkirim ke kamera (${r.seconds} dtk)`);
+            } catch (e) {
+                toast(e.message);
+            }
+            talkSending = false;
+            talkUi('', '');
+        }
+
+        async function startTalk() {
+            if (talk || talkSending || !cam) return;
+            const started = Date.now();
+            const tick = setInterval(() => talkUi('rec', fmtOffset((Date.now() - started) / 1000)), 250);
+            const limit = setTimeout(() => talk && talk.stop(true), TALK_MAX_MS);
+            const finish = () => { clearInterval(tick); clearTimeout(limit); talk = null; talkUi('', ''); };
+            const longEnough = () => Date.now() - started >= TALK_MIN_MS;
+            if (navigator.vibrate) navigator.vibrate(15);
+            talkUi('rec', '00:00');
+
+            if (window.BudiAndroid && BudiAndroid.startTalk) {
+                // Aplikasi Android merekam secara native: di WiFi rumah halaman memakai http, getUserMedia tidak tersedia
+                talk = { started, finish, stop: send => { const ok = send && longEnough(); finish(); BudiAndroid.stopTalk(ok); } };
+                BudiAndroid.startTalk();
+                return;
+            }
+            if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) {
+                finish();
+                toast('Mikrofon hanya bisa dipakai lewat aplikasi Liliya atau alamat https.');
+                return;
+            }
+            const pending = { started, finish, cancelled: false, stop: () => { pending.cancelled = true; finish(); } };
+            talk = pending;
+            let stream;
+            try {
+                stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
+            } catch (e) {
+                if (talk === pending) finish();
+                toast('Izin mikrofon ditolak.');
+                return;
+            }
+            if (pending.cancelled) { stream.getTracks().forEach(t => t.stop()); return; }   // tombol dilepas sebelum mikrofon siap
+            const rec = new MediaRecorder(stream);
+            const chunks = [];
+            let send = false;
+            rec.ondataavailable = e => { if (e.data.size) chunks.push(e.data); };
+            rec.onstop = () => {
+                stream.getTracks().forEach(t => t.stop());
+                if (send) sendTalk(new Blob(chunks, { type: rec.mimeType || 'audio/webm' }));
+            };
+            rec.start();
+            talk = { started, finish, stop: s => { send = s && longEnough(); finish(); rec.stop(); } };
+        }
+
+        function endTalk(e) {
+            if (!talk) return;
+            e.preventDefault();
+            const short = Date.now() - talk.started < TALK_MIN_MS;
+            talk.stop(true);
+            if (short) toast('Tahan tombol sambil bicara, lalu lepas untuk mengirim.');
+        }
+
+        // Dipanggil MainActivity setelah rekaman native selesai
+        window.budiNativeTalk = {
+            audio: (b64, mime) => {
+                const bin = atob(b64);
+                const buf = new Uint8Array(bin.length);
+                for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
+                sendTalk(new Blob([buf], { type: mime }));
+            },
+            error: msg => { if (talk) talk.finish(); toast(msg); }
+        };
+
+        talkBtn.addEventListener('pointerdown', e => {
+            e.preventDefault();
+            try { talkBtn.setPointerCapture(e.pointerId); } catch (err) {}   // jari bergeser keluar tombol tetap terhitung
+            startTalk();
+        });
+        talkBtn.addEventListener('pointerup', endTalk);
+        talkBtn.addEventListener('pointercancel', endTalk);
+        talkBtn.addEventListener('contextmenu', e => e.preventDefault());   // tahan lama di HP tidak memunculkan menu
+        talkBtn.addEventListener('keydown', e => {
+            if ((e.key === 'Enter' || e.key === ' ') && !e.repeat) { e.preventDefault(); startTalk(); }
+        });
+        talkBtn.addEventListener('keyup', e => { if (e.key === 'Enter' || e.key === ' ') endTalk(e); });
 
         function selectCamera(id) {
             cam = cameras.find(c => c.id === id) || cameras[0];
@@ -906,6 +988,7 @@ const BudiHome = (() => {
             // Hentikan live stream & playback saat tab ditinggalkan agar hemat kuota & CPU
             if (liveEl) { liveEl.remove(); liveEl = null; }
             stage?.querySelectorAll('video.playback').forEach(v => v.pause());
+            if (talk) talk.stop(false);
         }
 
         return { show, hide };

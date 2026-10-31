@@ -1,16 +1,23 @@
 """
 Kontrol kamera Tapo lewat API lokal kamera (pytapo), tanpa cloud TP-Link:
-mode privasi, deteksi gerakan/orang, mode malam, balik gambar, dan sirene.
+mode privasi, deteksi gerakan/orang, mode malam, balik gambar, dan bicara lewat speaker kamera.
+
+Bicara ("tahan untuk bicara" seperti aplikasi Tapo): rekaman dari HP diubah ffmpeg ke 8 kHz lalu
+diputar go2rtc ke kamera lewat stream tapo:// yang punya jalur audio balik (backchannel).
 
 Kamera hanya menerima login kontrol sebagai "admin" dengan password akun Tapo
 (cctv.cameras[].tapo_cloud_password di config.yaml). Setelah beberapa login gagal kamera
 mengunci login ±30 menit, jadi setelah gagal kita berhenti mencoba sampai waktunya lewat.
 """
 import asyncio
+import os
 import re
+import tempfile
 import time
 from concurrent.futures import ThreadPoolExecutor
+from urllib.parse import quote
 
+import aiohttp
 from aiohttp import web
 
 try:
@@ -20,7 +27,10 @@ except ImportError:  # pragma: no cover - pytapo opsional
 
 SENSITIVITY = ("low", "normal", "high")
 NIGHT_MODES = ("auto", "on", "off")
-SIREN_MAX_SECONDS = 60
+TALK_MAX_SECONDS = 30
+TALK_MAX_BYTES = 1_000_000
+# Jeda awal agar suku kata pertama tidak terpotong, buang dengung rendah, ratakan volume suara
+TALK_FILTER = "adelay=300,highpass=f=200,lowpass=f=3400,dynaudnorm=f=150:g=15,alimiter=limit=0.95"
 
 
 class TapoCamera:
@@ -132,7 +142,9 @@ class TapoControlManager:
                 self.cameras[cam_id] = TapoCamera(host, str(password))
         # pytapo memakai event loop sendiri per objek: semua panggilan lewat satu thread
         self._executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="tapo")
-        self._siren_stop = {}
+        self.go2rtc_url = (cfg.get("go2rtc_url") or "http://127.0.0.1:1984").rstrip("/")
+        self._talk_locks = {}
+        self._talk_dir = os.path.join(tempfile.gettempdir(), "budi-talk")
         if self.cameras:
             print(f"[Tapo] 🎛️ Kontrol kamera aktif: {', '.join(self.cameras)}")
         elif Tapo is None and cfg.get("cameras"):
@@ -141,7 +153,7 @@ class TapoControlManager:
     def register_routes(self, app: web.Application):
         app.router.add_get("/api/cctv/{cam}/controls", self.handle_get)
         app.router.add_put("/api/cctv/{cam}/controls", self.handle_put)
-        app.router.add_post("/api/cctv/{cam}/siren", self.handle_siren)
+        app.router.add_post("/api/cctv/{cam}/talk", self.handle_talk)
 
     def _camera(self, request) -> tuple:
         cam_id = request.match_info.get("cam", "")
@@ -164,7 +176,7 @@ class TapoControlManager:
             status = await self._run(cam.status)
         except TapoError as e:
             return self._error(e)
-        return web.json_response({**status, "siren": cam_id in self._siren_stop})
+        return web.json_response({**status, "talk": True})
 
     async def handle_put(self, request):
         cam_id, cam = self._camera(request)
@@ -179,32 +191,68 @@ class TapoControlManager:
             return self._error(e)
         changes = ", ".join(f"{k}={body[k]}" for k in ("privacy", "motion", "sensitivity", "person", "night", "flip") if k in body)
         print(f"[Tapo] {cam_id}: {changes}")
-        return web.json_response({**status, "siren": cam_id in self._siren_stop})
+        return web.json_response({**status, "talk": True})
 
-    async def handle_siren(self, request):
+    # ---------- Bicara lewat speaker kamera ----------
+    async def _go2rtc(self, method: str, **params) -> tuple:
+        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=20)) as s:
+            async with s.request(method, f"{self.go2rtc_url}/api/streams", params=params) as r:
+                return r.status, await r.text()
+
+    async def _talk_stream(self, cam_id: str, cam: TapoCamera) -> str:
+        """Stream tapo:// (punya backchannel audio) dibuat di memori go2rtc saat pertama dipakai."""
+        name = f"{cam_id}_talk"
+        if (await self._go2rtc("GET", src=name))[0] == 200:
+            return name
+        # go2rtc menjawab 400 karena tidak boleh menulis file config-nya, tapi stream tetap dibuat
+        await self._go2rtc("PUT", name=name, src=f"tapo://{quote(cam.password, safe='')}@{cam.host}")
+        if (await self._go2rtc("GET", src=name))[0] != 200:
+            raise TapoError("go2rtc tidak bisa membuka jalur suara ke kamera.")
+        return name
+
+    async def handle_talk(self, request):
         cam_id, cam = self._camera(request)
-        try:
-            body = await request.json()
-        except Exception:
-            body = {}
-        on = bool(body.get("on"))
-        timer = self._siren_stop.pop(cam_id, None)
-        if timer:
-            timer.cancel()
-        try:
-            await self._run(cam.call, "startManualAlarm" if on else "stopManualAlarm")
-        except TapoError as e:
-            return self._error(e)
-        if on:
-            # Pengaman: sirene berhenti sendiri walau aplikasi ditutup
-            self._siren_stop[cam_id] = asyncio.get_running_loop().call_later(
-                SIREN_MAX_SECONDS, lambda: asyncio.ensure_future(self._auto_stop(cam_id, cam)))
-        print(f"[Tapo] {cam_id}: sirene {'NYALA' if on else 'mati'}")
-        return web.json_response({"siren": on, "max_seconds": SIREN_MAX_SECONDS})
+        lock = self._talk_locks.setdefault(cam_id, asyncio.Lock())
+        if lock.locked():
+            return self._error(TapoError("Suara sebelumnya masih diputar di kamera, tunggu sebentar."))
+        data = await request.content.read(TALK_MAX_BYTES + 1)
+        if len(data) > TALK_MAX_BYTES:
+            return self._error(TapoError(f"Rekaman terlalu panjang (maksimal {TALK_MAX_SECONDS} detik)."))
+        if len(data) < 500:
+            return self._error(TapoError("Rekaman kosong, coba tahan tombol lebih lama."))
 
-    async def _auto_stop(self, cam_id: str, cam: TapoCamera):
-        self._siren_stop.pop(cam_id, None)
-        try:
-            await self._run(cam.call, "stopManualAlarm")
-        except TapoError as e:
-            print(f"[Tapo] {cam_id}: gagal mematikan sirene otomatis: {e}")
+        async with lock:
+            os.makedirs(self._talk_dir, exist_ok=True)
+            base = os.path.join(self._talk_dir, f"{cam_id}_{int(time.time() * 1000)}")
+            src, wav = base + ".in", base + ".wav"
+            try:
+                with open(src, "wb") as f:
+                    f.write(data)
+                proc = await asyncio.create_subprocess_exec(
+                    "ffmpeg", "-y", "-v", "error", "-i", src, "-t", str(TALK_MAX_SECONDS), "-af", TALK_FILTER,
+                    "-ac", "1", "-ar", "8000", "-c:a", "pcm_s16le", wav,
+                    stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.PIPE)
+                _, err = await asyncio.wait_for(proc.communicate(), 30)
+                if proc.returncode != 0 or not os.path.exists(wav):
+                    print(f"[Tapo] {cam_id}: rekaman bicara gagal diubah: {err.decode(errors='replace')[-200:]}")
+                    raise TapoError("Rekaman suara tidak bisa dibaca.")
+                seconds = max(0.0, (os.path.getsize(wav) - 44) / 16000)   # PCM 16-bit mono 8 kHz
+
+                name = await self._talk_stream(cam_id, cam)
+                status, body = await self._go2rtc("POST", dst=name, src=f"ffmpeg:{wav}#input=file#audio=pcma")
+                if status != 200 or '"format_name":"tapo"' not in body:
+                    raise TapoError("Kamera tidak menerima suara. Pastikan mode privasi mati.")
+                print(f"[Tapo] {cam_id}: 🎙️ bicara {seconds:.1f} dtk")
+                # go2rtc membaca file secara real-time: tunggu sampai selesai diputar sebelum file dihapus
+                await asyncio.sleep(seconds + 0.5)
+            except TapoError as e:
+                return self._error(e)
+            except (aiohttp.ClientError, asyncio.TimeoutError):
+                return self._error(TapoError("go2rtc tidak merespon."))
+            finally:
+                for path in (src, wav):
+                    try:
+                        os.remove(path)
+                    except OSError:
+                        pass
+        return web.json_response({"status": "ok", "seconds": round(seconds, 1)})

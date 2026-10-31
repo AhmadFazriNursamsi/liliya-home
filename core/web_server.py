@@ -66,7 +66,7 @@ class WebServer:
 
         # CCTV Routes (rekaman, live view via go2rtc, pan-tilt)
         self.cctv.register_routes(self.app)
-        # Kontrol kamera Tapo (privasi, deteksi gerakan, mode malam, sirene)
+        # Kontrol kamera Tapo (privasi, deteksi gerakan, mode malam, bicara lewat speaker kamera)
         self.tapo.register_routes(self.app)
 
         # Router Routes (perangkat terhubung, kunci IP, status internet, restart)

@@ -12,6 +12,7 @@ import android.content.pm.ActivityInfo;
 import android.content.pm.PackageManager;
 import android.content.res.Configuration;
 import android.graphics.Color;
+import android.media.MediaRecorder;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
@@ -20,6 +21,7 @@ import android.speech.RecognitionListener;
 import android.speech.RecognizerIntent;
 import android.speech.SpeechRecognizer;
 import android.text.InputType;
+import android.util.Base64;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
@@ -45,6 +47,9 @@ import com.google.firebase.messaging.FirebaseMessaging;
 
 import org.json.JSONObject;
 
+import java.io.File;
+import java.io.IOException;
+import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.function.Consumer;
 import java.util.regex.Matcher;
@@ -69,6 +74,8 @@ public class MainActivity extends Activity {
     private View customView;
     private WebChromeClient.CustomViewCallback customViewCallback;
     private SpeechRecognizer recognizer;
+    private MediaRecorder talkRecorder;   // "tahan untuk bicara" ke speaker CCTV
+    private File talkFile;
     private PermissionRequest pendingWebPermission;
     private boolean pendingSpeechStart;
     private String activeBase;   // alamat server yang sedang dimuat (WiFi rumah atau Cloudflare)
@@ -572,6 +579,77 @@ public class MainActivity extends Activity {
         runOnUiThread(() -> webView.evaluateJavascript(js, null));
     }
 
+    // ---------------- Bicara lewat speaker CCTV (rekam native) ----------------
+
+    /** Rekam suara saat tombol bicara ditahan. Native karena di WiFi rumah halaman memakai http (tanpa getUserMedia). */
+    private void startTalk() {
+        if (!hasMicPermission()) {
+            requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO}, REQ_MIC);
+            jsTalk("error", "Izinkan mikrofon, lalu tahan tombol bicara lagi.");
+            return;
+        }
+        releaseTalk();
+        try {
+            talkFile = new File(getCacheDir(), "talk.m4a");
+            MediaRecorder r = Build.VERSION.SDK_INT >= 31 ? new MediaRecorder(this) : new MediaRecorder();
+            talkRecorder = r;
+            // VOICE_COMMUNICATION: peredam gema & bising bawaan HP
+            r.setAudioSource(MediaRecorder.AudioSource.VOICE_COMMUNICATION);
+            r.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4);
+            r.setAudioEncoder(MediaRecorder.AudioEncoder.AAC);
+            r.setAudioChannels(1);
+            r.setAudioSamplingRate(16000);
+            r.setAudioEncodingBitRate(48000);
+            r.setOutputFile(talkFile.getAbsolutePath());
+            r.prepare();
+            r.start();
+        } catch (Exception e) {
+            releaseTalk();
+            jsTalk("error", "Mikrofon tidak bisa dipakai: " + e.getMessage());
+        }
+    }
+
+    private void stopTalk(boolean send) {
+        if (talkRecorder == null) return;
+        boolean recorded = true;
+        try {
+            talkRecorder.stop();
+        } catch (RuntimeException e) {
+            recorded = false;   // dilepas terlalu cepat: belum ada data suara
+        }
+        talkRecorder.release();
+        talkRecorder = null;
+        File file = talkFile;
+        if (!send || !recorded) {
+            file.delete();
+            return;
+        }
+        new Thread(() -> {
+            try {
+                String b64 = Base64.encodeToString(Files.readAllBytes(file.toPath()), Base64.NO_WRAP);
+                runOnUiThread(() -> webView.evaluateJavascript(
+                        "window.budiNativeTalk && budiNativeTalk.audio('" + b64 + "','audio/mp4')", null));
+            } catch (IOException e) {
+                jsTalk("error", "Rekaman gagal dibaca.");
+            } finally {
+                file.delete();
+            }
+        }).start();
+    }
+
+    private void releaseTalk() {
+        if (talkRecorder != null) {
+            try { talkRecorder.release(); } catch (RuntimeException ignored) { }
+            talkRecorder = null;
+        }
+        if (talkFile != null) talkFile.delete();
+    }
+
+    private void jsTalk(String fn, String arg) {
+        String js = "window.budiNativeTalk && window.budiNativeTalk." + fn + "(" + JSONObject.quote(arg) + ")";
+        runOnUiThread(() -> webView.evaluateJavascript(js, null));
+    }
+
     @Override
     public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
         if (requestCode == REQ_NOTIF) return;   // ditolak pun aplikasi tetap jalan, hanya tanpa notifikasi
@@ -602,6 +680,12 @@ public class MainActivity extends Activity {
 
         @JavascriptInterface
         public void stopSpeech() { runOnUiThread(MainActivity.this::stopSpeech); }
+
+        @JavascriptInterface
+        public void startTalk() { runOnUiThread(MainActivity.this::startTalk); }
+
+        @JavascriptInterface
+        public void stopTalk(boolean send) { runOnUiThread(() -> MainActivity.this.stopTalk(send)); }
 
         @JavascriptInterface
         public void openSettings() { runOnUiThread(MainActivity.this::showSettings); }
@@ -637,6 +721,7 @@ public class MainActivity extends Activity {
     protected void onPause() {
         super.onPause();
         CookieManager.getInstance().flush();
+        stopTalk(false);
         webView.onPause();
     }
 
@@ -655,6 +740,7 @@ public class MainActivity extends Activity {
     @Override
     protected void onDestroy() {
         if (recognizer != null) recognizer.destroy();
+        releaseTalk();
         webView.destroy();
         super.onDestroy();
     }
