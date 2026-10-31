@@ -11,7 +11,7 @@ from aiohttp import web
 COOKIE_NAME = "budi_session"
 # /push/snap/: gambar notifikasi FCM, diakses lewat URL acak sekali pakai (lihat core/push.py)
 # /api/voice-worker/: pekerja suara GPU, diperiksa sendiri dengan token khusus (lihat core/remote_tts.py)
-PUBLIC_PATHS = ("/login", "/logout", "/static/", "/favicon.ico", "/push/snap/", "/api/voice-worker/")
+PUBLIC_PATHS = ("/login", "/logout", "/static/", "/favicon.ico", "/push/snap/", "/api/voice-worker/", "/api/door-device/")
 def _redirect(location: str) -> web.Response:
     return web.Response(status=302, headers={"Location": location, "Cache-Control": "no-store"})
 

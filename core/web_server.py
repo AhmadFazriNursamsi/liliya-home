@@ -12,6 +12,7 @@ from core.push import PushManager
 from core.tapo_control import TapoControlManager
 from core.docs import DocsManager
 from core.unduh import UnduhManager
+from core.door_lock import DoorLockManager
 
 class WebServer:
     def __init__(self, config, event_bridge=None, smart_home_db=None, host="0.0.0.0", port=8080):
@@ -35,6 +36,9 @@ class WebServer:
         self.tapo = TapoControlManager(config)
         self.docs = DocsManager(config, self.base_dir)
         self.unduh = UnduhManager(config, self.base_dir)
+        self.door_lock = DoorLockManager(config, self.base_dir)
+        self.door_lock.push = self.push
+        self.door_lock.broadcast = self.broadcast
         VOICE_BROKER.configure(config, self.base_dir)
         self.app = web.Application(middlewares=[self.auth.middleware])
         self._setup_routes()
@@ -80,6 +84,9 @@ class WebServer:
 
         # Unduh video dari link (TikTok tanpa watermark, YouTube, Instagram, dll.)
         self.unduh.register_routes(self.app)
+
+        # Kunci pintu pintar (ESP32 RFID + servo + sensor pintu)
+        self.door_lock.register_routes(self.app)
         VOICE_BROKER.register_routes(self.app)
 
     async def handle_index(self, request):

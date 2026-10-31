@@ -30,6 +30,7 @@ from skills.timer_alarm import TimerAlarmSkill
 from skills.system_control import SystemControlSkill
 from skills.smart_home import SmartHomeSkill
 from skills.prayer_times import PrayerTimesSkill
+from skills.door_lock import DoorLockSkill
 
 # Filler "sebentar" hanya diputar bila jawaban belum siap dalam waktu ini (perintah cepat tanpa filler)
 FILLER_DELAY_S = 0.8
@@ -200,7 +201,8 @@ def main():
         "weather": weather,
         "timer": timer,
         "system": system_ctrl,
-        "prayer_times": prayer_times
+        "prayer_times": prayer_times,
+        "door_lock": DoorLockSkill(web_server.door_lock)
     }
     
     # 5. Inisialisasi Wake Word & Gemini AI

@@ -19,3 +19,6 @@ secrets/
 web/static/apk/
 data/docs/
 data/voice/
+data/door_lock.json
+data/door_lock_token.json
+firmware/**/secrets.h
