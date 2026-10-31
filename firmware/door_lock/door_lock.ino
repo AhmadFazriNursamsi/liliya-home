@@ -170,7 +170,8 @@ void serviceDoorLogic() {
   if (isOpen && doorOpenedSinceUnlock && doorClosed && now - doorChangedAt >= AUTOLOCK_MS)
     lock("otomatis");
 
-  if (!doorClosed && now - doorChangedAt >= REMIND_AFTER_MS &&
+  // Pengingat hanya saat kunci terbuka; jika sudah terkunci tidak ada yang lupa ditutup
+  if (isOpen && !doorClosed && now - doorChangedAt >= REMIND_AFTER_MS &&
       (!lastReminder || now - lastReminder >= REMIND_EVERY_MS)) {
     if (!lastReminder) netEvent("reminder", !isOpen, doorClosed);   // laporkan sekali per kejadian
     lastReminder = now;
