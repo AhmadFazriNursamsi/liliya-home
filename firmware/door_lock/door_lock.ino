@@ -15,8 +15,8 @@
 
 // Sudut relatif terhadap titik tengah servo (0 = 1500us):
 // "-" = arah buka, "+" = arah tutup
-#define ANGLE_LOCK   20    // posisi terkunci (slot menutup), LED mati
-#define ANGLE_OPEN   80    // posisi terbuka (kunci + 60 derajat), LED menyala
+#define ANGLE_LOCK   30    // posisi terkunci (slot menutup), LED mati
+#define ANGLE_OPEN   90    // posisi terbuka (kunci + 60 derajat), LED menyala
 #define STEP_MS      10    // servo bergerak 1 derajat tiap 10 ms (60 derajat = 0,6 detik)
 #define HOLD_MS      800   // tahan posisi setelah sampai, setelah itu PWM dilepas
 #define SERVO_MIN_US 500   // pulsa untuk 0 derajat
