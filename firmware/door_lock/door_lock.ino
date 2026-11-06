@@ -203,6 +203,26 @@ void serviceDoorLogic() {
   }
 }
 
+// Tegangan yang anjlok saat servo bergerak bisa membuat RC522 macet walau
+// ESP32 tetap hidup; cek berkala dan inisialisasi ulang bila perlu
+#define RFID_CHECK_MS  5000
+#define RFID_REINIT_MS 60000
+void serviceRfid() {
+  static unsigned long lastCheck = 0, lastInit = 0;
+  unsigned long now = millis();
+  if (now - lastCheck < RFID_CHECK_MS) return;
+  lastCheck = now;
+  byte v = rfid.PCD_ReadRegister(MFRC522::VersionReg);
+  bool bad = v == 0x00 || v == 0xFF;
+  // Register versi bisa tetap terbaca normal padahal antena sudah mati
+  bool antennaOff = (rfid.PCD_ReadRegister(MFRC522::TxControlReg) & 0x03) != 0x03;
+  if (bad || antennaOff || now - lastInit >= RFID_REINIT_MS) {
+    if (bad || antennaOff) Serial.printf("RC522 tidak merespon (0x%02X), inisialisasi ulang\n", v);
+    rfid.PCD_Init();
+    lastInit = now;
+  }
+}
+
 // Kartu yang ditahan menempel akan terbaca berulang; tunggu sampai kartu
 // diangkat (3x berturut-turut tidak menjawab) supaya satu tap = satu aksi
 void waitCardRemoved() {
@@ -259,6 +279,7 @@ void loop() {
   serviceDoorLogic();
   handleSerial();
   handleCommands();
+  serviceRfid();
 
   if (!rfid.PICC_IsNewCardPresent() || !rfid.PICC_ReadCardSerial()) {
     waitMs(50);
