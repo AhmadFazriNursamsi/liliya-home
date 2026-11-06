@@ -17,7 +17,8 @@
 // "-" = arah buka, "+" = arah tutup
 #define ANGLE_LOCK   20    // posisi terkunci (slot menutup), LED mati
 #define ANGLE_OPEN   80    // posisi terbuka (kunci + 60 derajat), LED menyala
-#define MOVE_MS      700   // waktu servo bergerak, setelah itu PWM dilepas
+#define STEP_MS      10    // servo bergerak 1 derajat tiap 10 ms (60 derajat = 0,6 detik)
+#define HOLD_MS      800   // tahan posisi setelah sampai, setelah itu PWM dilepas
 #define SERVO_MIN_US 500   // pulsa untuk 0 derajat
 #define SERVO_MAX_US 2500  // pulsa untuk 180 derajat
 #define SERVO_BITS   14
@@ -30,9 +31,11 @@
 #define REMIND_EVERY_MS  10000   // jarak antar bunyi pengingat
 
 MFRC522 rfid(PIN_SS, PIN_RST);
-unsigned long detachAt = 0;
 bool isOpen = false;
-int currentAngle = ANGLE_LOCK;
+int currentAngle = ANGLE_LOCK;   // sudut tujuan
+int servoPos = ANGLE_LOCK;       // sudut yang sedang dikirim ke servo
+bool servoActive = false;
+unsigned long nextStepAt = 0;
 bool doorClosed = false;
 unsigned long irChangedAt = 0;
 bool doorOpenedSinceUnlock = false;   // kunci otomatis hanya setelah pintu benar-benar dibuka
@@ -64,24 +67,44 @@ const char *lookup(const String &uid) {
   return nullptr;
 }
 
+// Pakai LEDC langsung: ESP32Servo selalu mengirim pulsa 90 derajat saat attach,
+// membuat servo menyentak ke tengah sebelum ke sudut tujuan.
+void writeServo(int angle) {
+  uint32_t us = map(-angle, -90, 90, SERVO_MIN_US, SERVO_MAX_US);
+  ledcWrite(PIN_SERVO, us * ((1 << SERVO_BITS) - 1) / 20000);
+}
+
+// Servo digerakkan bertahap (bukan loncat langsung) supaya lonjakan arus kecil
+// dan tegangan baterai/step-up tidak anjlok; setelah sampai ditahan HOLD_MS
+// lalu PWM dilepas supaya servo tidak terus menarik arus
+void moveServo(int angle) {
+  currentAngle = angle;
+  if (servoPos == angle) { writeServo(angle); nextStepAt = millis() + HOLD_MS; }
+  else nextStepAt = millis();
+  servoActive = true;
+}
+
+void serviceServo() {
+  if (!servoActive || (long)(millis() - nextStepAt) < 0) return;
+  if (servoPos == currentAngle) { ledcWrite(PIN_SERVO, 0); servoActive = false; return; }
+  servoPos += servoPos < currentAngle ? 1 : -1;
+  writeServo(servoPos);
+  nextStepAt = millis() + (servoPos == currentAngle ? HOLD_MS : STEP_MS);
+}
+
+// delay() yang tetap menjalankan gerakan servo
+void waitMs(unsigned long ms) {
+  unsigned long start = millis();
+  while (millis() - start < ms) { serviceServo(); delay(1); }
+}
+
 // Bunyikan buzzer sekaligus kedipkan LED
 void beep(int times, int ms) {
   for (int i = 0; i < times; i++) {
-    digitalWrite(BUZZER, HIGH); digitalWrite(LED, LOW);  delay(ms);
-    digitalWrite(BUZZER, LOW);  digitalWrite(LED, HIGH); delay(ms);
+    digitalWrite(BUZZER, HIGH); digitalWrite(LED, LOW);  waitMs(ms);
+    digitalWrite(BUZZER, LOW);  digitalWrite(LED, HIGH); waitMs(ms);
   }
   digitalWrite(LED, isOpen ? LOW : HIGH);
-}
-
-// Gerakkan servo lalu lepas PWM setelah MOVE_MS supaya tidak terus menahan
-// beban (mencegah arus stall melebihi kemampuan charger 2A).
-// Pakai LEDC langsung: ESP32Servo selalu mengirim pulsa 90 derajat saat attach,
-// membuat servo menyentak ke tengah sebelum ke sudut tujuan.
-void moveServo(int angle) {
-  uint32_t us = map(-angle, -90, 90, SERVO_MIN_US, SERVO_MAX_US);
-  ledcWrite(PIN_SERVO, us * ((1 << SERVO_BITS) - 1) / 20000);
-  currentAngle = angle;
-  detachAt = millis() + MOVE_MS;
 }
 
 // Kalibrasi via Serial: "+3" = 3 derajat ke arah tutup, "-3" = ke arah buka,
@@ -180,10 +203,6 @@ void serviceDoorLogic() {
   }
 }
 
-void serviceServo() {
-  if (detachAt && millis() >= detachAt) { ledcWrite(PIN_SERVO, 0); detachAt = 0; }
-}
-
 // Kartu yang ditahan menempel akan terbaca berulang; tunggu sampai kartu
 // diangkat (3x berturut-turut tidak menjawab) supaya satu tap = satu aksi
 void waitCardRemoved() {
@@ -196,10 +215,9 @@ void waitCardRemoved() {
     } else {
       absent++;
     }
-    serviceServo();
     serviceDoor();
     serviceDoorLogic();
-    delay(100);
+    waitMs(100);
   }
 }
 
@@ -243,7 +261,7 @@ void loop() {
   handleCommands();
 
   if (!rfid.PICC_IsNewCardPresent() || !rfid.PICC_ReadCardSerial()) {
-    delay(50);
+    waitMs(50);
     return;
   }
 
