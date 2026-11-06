@@ -97,9 +97,10 @@ void waitMs(unsigned long ms) {
   while (millis() - start < ms) { serviceServo(); delay(1); }
 }
 
-// Buzzer berbunyi terus selama pintu terbuka, mati saat pintu tertutup
+// Buzzer mengikuti servo: bunyi terus selama kunci terbuka, mati setelah
+// kunci otomatis menutup
 void updateBuzzer() {
-  digitalWrite(BUZZER, doorClosed ? LOW : HIGH);
+  digitalWrite(BUZZER, isOpen ? HIGH : LOW);
 }
 
 // Bunyikan buzzer sekaligus kedipkan LED
@@ -145,7 +146,6 @@ void serviceDoor() {
   irChangedAt = 0;
   doorChangedAt = millis();
   lastReminder = 0;
-  updateBuzzer();
   if (isOpen && !doorClosed) doorOpenedSinceUnlock = true;
   Serial.printf("PINTU: %s\n", doorClosed ? "TERTUTUP" : "TERBUKA");
   netEvent(doorClosed ? "door_closed" : "door_open", !isOpen, doorClosed);
@@ -194,7 +194,7 @@ void handleCommands() {
 }
 
 // Kunci otomatis setelah pintu ditutup, dan notifikasi jika pintu lama terbuka
-// (buzzer sendiri sudah berbunyi terus selama pintu terbuka)
+// (buzzer sendiri sudah berbunyi terus selama kunci terbuka)
 void serviceDoorLogic() {
   unsigned long now = millis();
   if (isOpen && doorOpenedSinceUnlock && doorClosed && now - doorChangedAt >= AUTOLOCK_MS)
@@ -256,7 +256,6 @@ void setup() {
   digitalWrite(BUZZER, LOW);
   pinMode(PIN_IR, INPUT_PULLUP);
   doorClosed = digitalRead(PIN_IR) == LOW;
-  updateBuzzer();
   delay(1500);
 
   SPI.begin(PIN_SCK, PIN_MISO, PIN_MOSI, PIN_SS);
