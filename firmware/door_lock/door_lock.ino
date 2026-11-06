@@ -270,7 +270,22 @@ void setup() {
   Serial.printf("PINTU: %s\n", doorClosed ? "TERTUTUP" : "TERBUKA");
 
   netBegin();
-  netEvent("boot", true, doorClosed);
+  // Alasan menyala ulang ikut dikirim supaya terlihat di riwayat aplikasi
+  // apakah karena tegangan anjlok (brownout) atau program crash
+  const char *why;
+  switch (esp_reset_reason()) {
+    case ESP_RST_POWERON:  why = "daya dinyalakan"; break;
+    case ESP_RST_BROWNOUT: why = "tegangan anjlok"; break;
+    case ESP_RST_PANIC:    why = "program crash"; break;
+    case ESP_RST_INT_WDT:
+    case ESP_RST_TASK_WDT:
+    case ESP_RST_WDT:      why = "watchdog"; break;
+    case ESP_RST_SW:       why = "restart program"; break;
+    case ESP_RST_USB:      why = "reset USB"; break;
+    default:               why = "lainnya"; break;
+  }
+  Serial.printf("Alasan menyala: %s\n", why);
+  netEvent("boot", true, doorClosed, why);
 }
 
 void loop() {
