@@ -102,6 +102,9 @@ void netBegin() {
   WiFi.mode(WIFI_STA);
   WiFi.setAutoReconnect(true);
   WiFi.begin(WIFI_SSID, WIFI_PASS);
+  // Antena ESP32-C3 SuperMini sering gagal tersambung pada daya pancar
+  // maksimal; daya lebih rendah justru lebih stabil
+  WiFi.setTxPower(WIFI_POWER_8_5dBm);
   xTaskCreate(eventTask, "liliya_ev", 6144, nullptr, 1, nullptr);
   xTaskCreate(cmdTask, "liliya_cmd", 6144, nullptr, 1, nullptr);
 }
