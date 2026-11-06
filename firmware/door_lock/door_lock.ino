@@ -23,12 +23,11 @@
 #define SERVO_MAX_US 2500  // pulsa untuk 180 derajat
 #define SERVO_BITS   14
 
-// Satu-satunya kartu yang boleh membuka/mengunci servo
-#define OWNER_UID "00 00 00 01"   // Fazri (kartu putih)
+// Semua kartu di daftar known[] hanya bisa membuka kunci; mengunci dilakukan
+// otomatis lewat sensor IR (atau dari aplikasi)
 
 #define AUTOLOCK_MS      3000    // kunci otomatis setelah pintu tertutup selama ini
-#define REMIND_AFTER_MS  60000   // pintu terbuka lebih lama dari ini -> pengingat
-#define REMIND_EVERY_MS  10000   // jarak antar bunyi pengingat
+#define REMIND_AFTER_MS  60000   // pintu terbuka lebih lama dari ini -> notifikasi HP
 
 MFRC522 rfid(PIN_SS, PIN_RST);
 bool isOpen = false;
@@ -98,6 +97,11 @@ void waitMs(unsigned long ms) {
   while (millis() - start < ms) { serviceServo(); delay(1); }
 }
 
+// Buzzer berbunyi terus selama pintu terbuka, mati saat pintu tertutup
+void updateBuzzer() {
+  digitalWrite(BUZZER, doorClosed ? LOW : HIGH);
+}
+
 // Bunyikan buzzer sekaligus kedipkan LED
 void beep(int times, int ms) {
   for (int i = 0; i < times; i++) {
@@ -105,6 +109,7 @@ void beep(int times, int ms) {
     digitalWrite(BUZZER, LOW);  digitalWrite(LED, HIGH); waitMs(ms);
   }
   digitalWrite(LED, isOpen ? LOW : HIGH);
+  updateBuzzer();
 }
 
 // Kalibrasi via Serial: "+3" = 3 derajat ke arah tutup, "-3" = ke arah buka,
@@ -140,6 +145,7 @@ void serviceDoor() {
   irChangedAt = 0;
   doorChangedAt = millis();
   lastReminder = 0;
+  updateBuzzer();
   if (isOpen && !doorClosed) doorOpenedSinceUnlock = true;
   Serial.printf("PINTU: %s\n", doorClosed ? "TERTUTUP" : "TERBUKA");
   netEvent(doorClosed ? "door_closed" : "door_open", !isOpen, doorClosed);
@@ -187,18 +193,16 @@ void handleCommands() {
   }
 }
 
-// Kunci otomatis setelah pintu ditutup, dan pengingat jika pintu lama terbuka
+// Kunci otomatis setelah pintu ditutup, dan notifikasi jika pintu lama terbuka
+// (buzzer sendiri sudah berbunyi terus selama pintu terbuka)
 void serviceDoorLogic() {
   unsigned long now = millis();
   if (isOpen && doorOpenedSinceUnlock && doorClosed && now - doorChangedAt >= AUTOLOCK_MS)
     lock("otomatis");
 
-  // Pengingat hanya saat kunci terbuka; jika sudah terkunci tidak ada yang lupa ditutup
-  if (isOpen && !doorClosed && now - doorChangedAt >= REMIND_AFTER_MS &&
-      (!lastReminder || now - lastReminder >= REMIND_EVERY_MS)) {
-    if (!lastReminder) netEvent("reminder", !isOpen, doorClosed);   // laporkan sekali per kejadian
+  if (isOpen && !doorClosed && !lastReminder && now - doorChangedAt >= REMIND_AFTER_MS) {
+    netEvent("reminder", !isOpen, doorClosed);   // laporkan sekali per kejadian
     lastReminder = now;
-    beep(3, 60);
     Serial.printf("PERINGATAN: pintu terbuka %lu detik\n", (now - doorChangedAt) / 1000);
   }
 }
@@ -252,6 +256,7 @@ void setup() {
   digitalWrite(BUZZER, LOW);
   pinMode(PIN_IR, INPUT_PULLUP);
   doorClosed = digitalRead(PIN_IR) == LOW;
+  updateBuzzer();
   delay(1500);
 
   SPI.begin(PIN_SCK, PIN_MISO, PIN_MOSI, PIN_SS);
@@ -306,19 +311,10 @@ void loop() {
   const char *name = lookup(uid);
 
   // Aksi dulu (servo + buzzer), baru log ke Serial
-  bool rejectedLock = false;
-  if (uid == OWNER_UID) {
-    if (!isOpen) {
-      unlock(name);
-    } else if (!doorClosed) {
-      rejectedLock = true;
-      rejectLock(name);
-    } else {
-      lock(name);
-    }
-  } else if (name) {
-    beep(1, 700);               // ditolak: biiip panjang
-    netEvent("denied_card", !isOpen, doorClosed, name);
+  bool wasOpen = isOpen;
+  if (name) {
+    if (!isOpen) unlock(name);
+    else beep(1, 150);          // sudah terbuka: cukup bip, kunci tetap lewat IR
   } else {
     beep(3, 100);               // asing: bip-bip-bip cepat
     netEvent("unknown_card", !isOpen, doorClosed, "", uid.c_str());
@@ -328,12 +324,8 @@ void loop() {
   Serial.printf("UID  : %s\n", uid.c_str());
   Serial.print("Tipe : ");
   Serial.println(rfid.PICC_GetTypeName(type));
-  if (rejectedLock)
-    Serial.printf("DIKENAL: %s -> DITOLAK, pintu masih terbuka\n", name);
-  else if (uid == OWNER_UID)
-    Serial.printf("DIKENAL: %s -> %s\n", name, isOpen ? "TERBUKA" : "TERKUNCI");
-  else if (name)
-    Serial.printf("DIKENAL: %s -> tidak punya akses servo\n", name);
+  if (name)
+    Serial.printf("DIKENAL: %s -> %s\n", name, wasOpen ? "sudah terbuka" : "TERBUKA");
   else
     Serial.println("TIDAK DIKENAL");
 
