@@ -12,6 +12,7 @@ class FirebaseRealtimeBridge:
         self.sync_path = self.config.get("sync_path", "smart_home/devices").strip("/")
         self.db = smart_home_db
         self._recent_local_pushes = {}
+        self._send_lock = threading.Lock()  # PATCH berurutan: perintah cepat beruntun tidak boleh tiba terbalik
         
         self.thread = None
         self.is_running = False
@@ -34,7 +35,8 @@ class FirebaseRealtimeBridge:
         def _send():
             try:
                 url = self._get_url(device_id)
-                requests.patch(url, json=updates, timeout=4)
+                with self._send_lock:
+                    requests.patch(url, json=updates, timeout=4)
                 print(f"[FirebaseCloud] ☁️ Berhasil sync '{device_id}' ke Firebase Cloud.")
             except Exception as e:
                 print(f"[FirebaseCloud Error] Gagal kirim ke cloud: {e}")
@@ -116,22 +118,29 @@ class FirebaseRealtimeBridge:
             if len(parts) == 1:
                 # Update objek dictionary device utuh (contoh: data={"state": "on", ...})
                 if isinstance(data, dict):
-                    cloud_ts = data.get("last_updated", 0)
-                    if cloud_ts and cloud_ts <= local_dev.get("last_updated", 0):
-                        # Data snapshot usang dari cloud, abaikan agar tidak override status lokal
+                    # Hanya data yang jelas lebih baru dari status lokal yang boleh menggerakkan perangkat.
+                    # Data tanpa last_updated (pantulan lama / snapshot usang) dulu tetap diterapkan dan
+                    # bisa menyalakan/mematikan lampu fisik dengan status kedaluwarsa.
+                    cloud_ts = data.get("last_updated") or 0
+                    if not isinstance(cloud_ts, (int, float)) or cloud_ts <= local_dev.get("last_updated", 0):
                         return
-                    self.db.update_device_state(device_id, data, sync_to_cloud=False)
-                    print(f"[FirebaseCloud] 📥 Kontrol jarak jauh diterima untuk '{device_id}': {data}")
+                    updates = {k: v for k, v in data.items() if k != "last_updated" and local_dev.get(k) != v}
+                    if not updates:
+                        return
+                    print(f"[FirebaseCloud] 📥 Kontrol jarak jauh diterima untuk '{device_id}': {updates}")
+                    self.db.update_device_state(device_id, updates, sync_to_cloud=False, source="Firebase")
             elif len(parts) >= 2:
                 # Update properti tunggal (contoh path: "lampu_ruang_tamu/state", data: "on")
                 prop_name = parts[1]
+                if prop_name == "last_updated":
+                    return
                 # Jika properti sudah sama persis dengan yang ada di lokal, jangan eksekusi ulang
                 if local_dev.get(prop_name) == data:
                     return
-                self.db.update_device_state(device_id, {prop_name: data}, sync_to_cloud=False)
+                self.db.update_device_state(device_id, {prop_name: data}, sync_to_cloud=False, source="Firebase")
                 print(f"[FirebaseCloud] 📥 Kontrol jarak jauh diterima: '{device_id}.{prop_name}' = {data}")
         except Exception as e:
-            pass
+            print(f"[FirebaseCloud Error] Event cloud gagal diproses: {e}")
 
     def stop(self):
         self.is_running = False

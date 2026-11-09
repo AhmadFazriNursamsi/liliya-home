@@ -213,7 +213,7 @@ class TuyaCloudBridge:
         for d in devices:
             report = reports.get(d["tuya_id"]) or {}
             # Abaikan status sesaat setelah BUDI mengirim perintah (cloud masih membawa status lama)
-            if now - self._last_command_at.get(d["tuya_id"], 0) < 20:
+            if now - self._last_command_at.get(d["tuya_id"], 0) < 45:
                 report.pop("state", None)
                 report.pop("brightness", None)
             if report.get("state") == "off":

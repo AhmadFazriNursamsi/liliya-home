@@ -246,7 +246,8 @@ class SmartHomeRealtimeDB:
                     matched.append(d)
         return matched
 
-    def update_device_state(self, device_id: str, updates: Dict[str, Any], sync_to_cloud=True, push_to_device=True) -> Optional[Dict[str, Any]]:
+    def update_device_state(self, device_id: str, updates: Dict[str, Any], sync_to_cloud=True, push_to_device=True,
+                            source: str = "tidak diketahui") -> Optional[Dict[str, Any]]:
         with self.lock:
             if device_id in self.devices:
                 device = self.devices[device_id]
@@ -262,9 +263,14 @@ class SmartHomeRealtimeDB:
                     # Tidak ada perubahan status, abaikan pengiriman ulang ke Tuya/Cloud
                     return device
 
+                changed = {k: v for k, v in updates.items() if device.get(k) != v}
                 device.update(updates)
                 device["last_updated"] = time.time()
-                
+                if changed:
+                    # Jejak sumber setiap perubahan, untuk melacak lampu yang "bergerak sendiri"
+                    fisik = " → perangkat fisik" if push_to_device and device.get("tuya_id") else ""
+                    print(f"[SmartHome] {device_id}: {changed} (sumber: {source}){fisik}")
+
                 if device.get("type") == "light":
                     device["icon"] = "fa-lightbulb"
                 elif device.get("type") == "sensor_contact":
@@ -280,7 +286,7 @@ class SmartHomeRealtimeDB:
                 
                 # Sinkronkan ke Firebase Cloud jika aktif
                 if sync_to_cloud and self.firebase_bridge:
-                    self.firebase_bridge.push_device_update(device_id, updates)
+                    self.firebase_bridge.push_device_update(device_id, {**updates, "last_updated": device["last_updated"]})
 
                 # Kontrol perangkat fisik via Tuya Cloud Bridge jika aktif
                 if push_to_device and self.tuya_bridge:
@@ -391,7 +397,8 @@ class SmartHomeRealtimeDB:
                 self._save_db_unlocked()
                 self._broadcast_device(device)
                 return
-        self.update_device_state(device_id, changes, sync_to_cloud=True, push_to_device=False)
+        self.update_device_state(device_id, changes, sync_to_cloud=True, push_to_device=False,
+                                 source="laporan Tuya (Smart Life / saklar dinding)")
 
     def _after_structure_change(self):
         self._broadcast_all()

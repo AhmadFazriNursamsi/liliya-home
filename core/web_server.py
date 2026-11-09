@@ -116,7 +116,7 @@ class WebServer:
             return web.json_response({"error": "Invalid JSON body"}, status=400)
             
         if self.smart_home_db:
-            updated = self.smart_home_db.update_device_state(dev_id, body)
+            updated = self.smart_home_db.update_device_state(dev_id, body, source=f"aplikasi (API, {request.remote})")
             if updated:
                 return web.json_response({"status": "success", "device": updated})
         return web.json_response({"error": "Device not found or DB not initialized"}, status=404)
@@ -222,11 +222,11 @@ class WebServer:
                         dev = self.smart_home_db.get_device_by_id(dev_id)
                         if dev:
                             new_st = "off" if dev.get("state") == "on" else "on"
-                            self.smart_home_db.update_device_state(dev_id, {"state": new_st})
+                            self.smart_home_db.update_device_state(dev_id, {"state": new_st}, source=f"aplikasi (toggle, {request.remote})")
                     elif msg_type == "smart_home_set_state" and self.smart_home_db:
                         dev_id = data.get("id")
                         updates = data.get("updates", {})
-                        self.smart_home_db.update_device_state(dev_id, updates)
+                        self.smart_home_db.update_device_state(dev_id, updates, source=f"aplikasi (websocket, {request.remote})")
         finally:
             self.websockets.discard(ws)
             print(f"[WebUI] 🔌 Client terputus ({len(self.websockets)} aktif)")

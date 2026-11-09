@@ -27,41 +27,41 @@ class SmartHomeSkill:
             dev_type = dev.get("type")
 
             if action_clean in ["turn_on", "nyalakan", "on", "buka"]:
-                self.db.update_device_state(dev_id, {"state": "on"})
+                self.db.update_device_state(dev_id, {"state": "on"}, source="perintah suara/Gemini")
                 results.append(f"{dev_name} dinyalakan")
                 
             elif action_clean in ["turn_off", "matikan", "off", "tutup"]:
-                self.db.update_device_state(dev_id, {"state": "off"})
+                self.db.update_device_state(dev_id, {"state": "off"}, source="perintah suara/Gemini")
                 results.append(f"{dev_name} dimatikan")
                 
             elif action_clean in ["set_brightness", "kecerahan", "redupkan", "terangkan"]:
                 try:
                     val_num = int("".join(filter(str.isdigit, str(value)))) if value else 50
                     val_num = max(0, min(100, val_num))
-                    self.db.update_device_state(dev_id, {"state": "on", "brightness": val_num})
+                    self.db.update_device_state(dev_id, {"state": "on", "brightness": val_num}, source="perintah suara/Gemini")
                     results.append(f"kecerahan {dev_name} diatur ke {val_num}%")
                 except Exception:
-                    self.db.update_device_state(dev_id, {"state": "on", "brightness": 50})
+                    self.db.update_device_state(dev_id, {"state": "on", "brightness": 50}, source="perintah suara/Gemini")
                     results.append(f"kecerahan {dev_name} diatur ke 50%")
                     
             elif action_clean in ["set_temperature", "suhu_ac", "atur_suhu"]:
                 try:
                     temp_num = int("".join(filter(str.isdigit, str(value)))) if value else 24
                     temp_num = max(16, min(30, temp_num))
-                    self.db.update_device_state(dev_id, {"state": "on", "temperature": temp_num})
+                    self.db.update_device_state(dev_id, {"state": "on", "temperature": temp_num}, source="perintah suara/Gemini")
                     results.append(f"suhu {dev_name} diatur ke {temp_num} derajat Celsius")
                 except Exception:
-                    self.db.update_device_state(dev_id, {"state": "on", "temperature": 24})
+                    self.db.update_device_state(dev_id, {"state": "on", "temperature": 24}, source="perintah suara/Gemini")
                     results.append(f"suhu {dev_name} diatur ke 24 derajat Celsius")
                     
             elif action_clean in ["set_speed", "kecepatan"]:
                 try:
                     spd_num = int("".join(filter(str.isdigit, str(value)))) if value else 2
                     spd_num = max(1, min(3, spd_num))
-                    self.db.update_device_state(dev_id, {"state": "on", "speed": spd_num})
+                    self.db.update_device_state(dev_id, {"state": "on", "speed": spd_num}, source="perintah suara/Gemini")
                     results.append(f"kecepatan {dev_name} diatur ke level {spd_num}")
                 except Exception:
-                    self.db.update_device_state(dev_id, {"state": "on", "speed": 2})
+                    self.db.update_device_state(dev_id, {"state": "on", "speed": 2}, source="perintah suara/Gemini")
                     results.append(f"kecepatan {dev_name} diatur ke level 2")
             else:
                 results.append(f"perintah pada {dev_name} telah diproses")
