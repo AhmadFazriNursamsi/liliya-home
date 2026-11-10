@@ -46,6 +46,15 @@ tts:
   voice: "id-ID-ArdiNeural"
   rate: "+0%"
   pitch: "+0Hz"
+  # Suara utama dari ElevenLabs (opsional). Gagal/kuota habis -> otomatis pakai suara Edge di atas.
+  # Paket gratis hanya bisa memakai suara bawaan ElevenLabs (bukan Voice Library) lewat API.
+  elevenlabs:
+    enabled: false
+    api_key: ""            # izin minimal: Text to Speech, Voices (Read)
+    voice_id: ""           # Voices -> My Voices -> ... -> Copy Voice ID
+    voice_name: ""
+    model_id: eleven_flash_v2_5
+    language_code: id
   # Suara kustom dari pekerja GPU (mis. notebook molab dengan VoxCPM2 + LoRA). Lihat README.
   # Selama pekerja tidak terhubung, Budi otomatis memakai suara Edge di atas.
   remote:

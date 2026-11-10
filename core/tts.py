@@ -7,6 +7,7 @@ import subprocess
 import tempfile
 import edge_tts
 from core.audio_hw import auto_unmute_hardware_audio, find_active_playback_device
+from core.elevenlabs_tts import ElevenLabsTTS
 from core.remote_tts import BROKER, split_for_speech
 
 class TTSEngine:
@@ -20,6 +21,8 @@ class TTSEngine:
         self.filler_files = [f for f in glob.glob(os.path.join(self.sounds_dir, "*.mp3")) if not os.path.basename(f).lower().startswith("adzan")]
         # Filler dengan suara kustom (dibuat oleh pekerja GPU), dipakai selama pekerja terhubung
         self.custom_filler_dir = os.path.join(self.base_dir, "data", "voice", "fillers")
+        # Suara utama Budi bila diaktifkan (tts.elevenlabs di config.yaml); Edge TTS jadi cadangan
+        self.eleven = ElevenLabsTTS(config, self.base_dir)
 
         # Pastikan DAC hardware selalu terbuka dan unmuted sejak inisialisasi
         auto_unmute_hardware_audio()
@@ -102,7 +105,9 @@ class TTSEngine:
         if not self.filler_files:
             self.filler_files = [f for f in glob.glob(os.path.join(self.sounds_dir, "*.mp3")) if not os.path.basename(f).lower().startswith("adzan")]
         files = self.filler_files
-        if BROKER.online():
+        if self.eleven.available():
+            files = glob.glob(os.path.join(self.eleven.filler_dir, "*.mp3")) or files
+        elif BROKER.online():
             files = glob.glob(os.path.join(self.custom_filler_dir, "*.mp3")) or files
         if files:
             chosen = random.choice(files)
@@ -156,11 +161,49 @@ class TTSEngine:
                     os.remove(tmp_path)
         return True
 
+    def _play_bytes(self, audio: bytes):
+        with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as tmp_file:
+            tmp_file.write(audio)
+            tmp_path = tmp_file.name
+        try:
+            self._play_audio_file(tmp_path)
+        finally:
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
+
+    def _speak_elevenlabs(self, text: str) -> bool:
+        """ElevenLabs per kalimat (dibuat paralel, diputar berurutan). Return False bila belum ada yang
+        terputar (pemanggil memakai cadangan untuk semuanya); gagal di tengah: sisanya lewat Edge TTS."""
+        chunks = split_for_speech(text)
+        if not chunks:
+            return True
+        slots = self.eleven.prefetch(chunks)
+        for i, slot in enumerate(slots):
+            ok = slot["done"].wait(self.eleven.timeout + 3) and slot["audio"]
+            if not ok:
+                err = slot["error"]
+                for rest in slots[i:]:
+                    rest["cancel"] = True
+                self.eleven.pause(getattr(err, "fatal_for_s", 60))
+                print(f"[TTS] ⚠️ ElevenLabs gagal ({err or 'terlambat'}); pakai suara cadangan.")
+                if i == 0:
+                    return False
+                self._speak_edge(" ".join(chunks[i:]))
+                return True
+            self._play_bytes(slot["audio"])
+        return True
+
     def speak(self, text: str):
         """Sintesis teks menjadi suara dan memutarnya ke speaker AV STB."""
         if not text or not text.strip():
             return
         print(f"[TTS] 🗣️ Membacakan: \"{text}\"")
+        if self.eleven.available():
+            try:
+                if self._speak_elevenlabs(text):
+                    return
+            except Exception as e:
+                print(f"[TTS Warning] ElevenLabs error: {e}")
         if BROKER.online():
             try:
                 if self._speak_remote(text):

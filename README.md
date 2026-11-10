@@ -57,7 +57,9 @@ Everything runs on the box itself; both 24/7 video recorders together use about 
   radio playback, weather, timers, volume, system status, time, and Islamic prayer times.
 - **Speech-to-text on the device** with `faster-whisper` (tiny, int8, beam search tuned for Indonesian),
   plus an optional offline wake word using a Vosk keyword grammar.
-- **Natural neural text-to-speech** with Edge TTS, with filler phrases to hide network latency.
+- **Natural neural text-to-speech** with ElevenLabs (`core/elevenlabs_tts.py`) or Edge TTS, with filler
+  phrases to hide network latency. ElevenLabs renders replies sentence by sentence in parallel, caches short
+  recurring phrases on disk to save character quota, and falls back to Edge TTS when the quota runs out.
 - **Optional custom voice on a remote GPU** (`core/remote_tts.py`): a fine-tuned VoxCPM2 + LoRA model is
   far too large for the box (2B parameters, 1.9 GB RAM), so a GPU worker (e.g. a molab notebook)
   long-polls `/api/voice-worker/next` with its own token and posts MP3 audio back. Replies are
