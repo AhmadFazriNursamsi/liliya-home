@@ -396,6 +396,9 @@
 .motion-chip span { color: var(--text-muted); }
 .motion-chip i { color: var(--peach-strong); }
 .motion-chip.people i { color: var(--red); }
+.motion-mark.animal { background: var(--green, #3fb950); }
+.motion-chip .motion-objs { font-weight: 600; white-space: nowrap; }
+.motion-chip.animal { border-color: color-mix(in srgb, var(--green, #3fb950) 55%, transparent); }
 .motion-count { display: inline-flex; align-items: center; gap: 3px; margin-left: 6px; font-size: 0.7rem; font-weight: 700; color: var(--peach-strong); }
 .motion-count i { color: inherit; font-size: 0.68rem; }
 .motion-count.people { color: var(--red); }

@@ -22,3 +22,5 @@ data/voice/
 data/door_lock.json
 data/door_lock_token.json
 firmware/**/secrets.h
+data/models/
+data/cctv_dataset/

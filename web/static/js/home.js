@@ -594,11 +594,13 @@ const BudiHome = (() => {
             const events = seg.motion || [];
             if (!events.length) return '<div class="motion-none"><i class="fa-regular fa-circle-check"></i> Tidak ada gerakan di rekaman ini</div>';
             const total = Math.max(1, seg.end_ts - seg.start_ts);
-            const marks = events.map(m => `<button class="motion-mark ${m.people ? 'people' : ''}" data-seek="${m.t}"
+            const kindCls = m => m.people ? 'people' : ((m.objs || []).length ? 'animal' : '');
+            const objText = m => (m.objs || []).map(o => `${o.emoji} ${esc(o.name)}`).join(', ');
+            const marks = events.map(m => `<button class="motion-mark ${kindCls(m)}" data-seek="${m.t}"
                 style="left:${(m.t / total * 100).toFixed(2)}%;width:${(m.d / total * 100).toFixed(2)}%"
-                title="${fmtClock(seg.start_ts + m.t)}" aria-label="Gerakan pukul ${fmtClock(seg.start_ts + m.t)}"></button>`).join('');
-            const chips = events.map(m => `<button class="pill-btn motion-chip ${m.people ? 'people' : ''}" data-seek="${m.t}">
-                <i class="fa-solid ${m.people ? 'fa-person' : 'fa-person-running'}"></i>
+                title="${fmtClock(seg.start_ts + m.t)}${objText(m) ? ' · ' + objText(m) : ''}" aria-label="Gerakan pukul ${fmtClock(seg.start_ts + m.t)}"></button>`).join('');
+            const chips = events.map(m => `<button class="pill-btn motion-chip ${kindCls(m)}" data-seek="${m.t}">
+                ${objText(m) ? `<b class="motion-objs">${objText(m)}</b>` : `<i class="fa-solid ${m.people ? 'fa-person' : 'fa-person-running'}"></i>`}
                 <strong>${fmtClock(seg.start_ts + m.t)}</strong><span>menit ${fmtOffset(m.t)}${m.d > 2 ? ` · ${m.d} dtk` : ''}</span></button>`).join('');
             return `<div class="motion-track" title="Ketuk untuk lompat"><div class="motion-cursor"></div>${marks}</div>
                 <div class="motion-head"><i class="fa-solid fa-person-running"></i> ${events.length} gerakan terdeteksi · ketuk untuk lompat</div>

@@ -11,6 +11,8 @@ import aiohttp
 import requests
 from aiohttp import web
 
+from core.detector import LABELS, ObjectDetector
+
 SEGMENT_RE = re.compile(r"^(\d{8})_(\d{6})\.mp4$")
 # File statis player go2rtc yang boleh diambil lewat BUDI (API konfigurasi go2rtc TIDAK diekspos)
 PLAYER_FILES = {"video-stream.js", "video-rtc.js"}
@@ -87,6 +89,8 @@ class CCTVManager:
                 "name": cam.get("name", cam_id),
                 "live_stream": cam.get("live_stream", cam_id),
                 "hd_stream": cam.get("hd_stream", cam_id),
+                # zona yang diabaikan deteksi objek, [x1, y1, x2, y2] 0..1 (mis. jemuran yang tertiup angin)
+                "ignore_zones": [tuple(float(v) for v in z) for z in (cam.get("ignore_zones") or []) if len(z) == 4],
             }
             onvif = cam.get("onvif") or {}
             if onvif.get("host"):
@@ -104,6 +108,11 @@ class CCTVManager:
         self._motion_tasks = []
         self._motion_pruned = ""
         self.push = None           # PushManager (notifikasi FCM saat ada gerakan), di-set oleh WebServer
+        # Deteksi orang/hewan saat ada gerakan (stream SD lewat RTSP go2rtc); notifikasi hanya bila ada objek
+        self.rtsp_base = cfg.get("go2rtc_rtsp", "rtsp://127.0.0.1:8554").rstrip("/")
+        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        self.detector = ObjectDetector(config, base_dir) if self.motion_enabled else None
+        self._detect_tasks = {}    # cam_id -> asyncio.Task
         if self.enabled:
             print(f"[CCTV] 📹 {len(self.cameras)} kamera aktif, rekaman di {self.recordings_dir}")
 
@@ -127,7 +136,7 @@ class CCTVManager:
             self._motion_tasks.append(asyncio.ensure_future(self._motion_watch(cam_id, onvif)))
 
     async def _stop_motion(self, app):
-        for t in self._motion_tasks:
+        for t in self._motion_tasks + list(self._detect_tasks.values()):
             t.cancel()
         now = time.time()
         for cam_id in list(self._motion_active):
@@ -187,14 +196,54 @@ class CCTVManager:
     def _set_motion(self, cam_id: str, kind: str, active: bool, now: float):
         current = self._motion_active.setdefault(cam_id, {})
         if active and kind not in current:
-            # Notifikasi saat gerakan baru dimulai, atau saat kamera mengenali ada orang
-            if self.push and (not current or kind == "people"):
+            if self.detector and self.detector.enabled:
+                # Notifikasi menunggu hasil deteksi objek (bayangan/daun/jemuran tidak dikirim)
+                task = self._detect_tasks.get(cam_id)
+                if task is None or task.done():
+                    self._detect_tasks[cam_id] = asyncio.ensure_future(self._detect_loop(cam_id))
+            # Tanpa deteksi objek: notifikasi saat gerakan baru dimulai, atau saat kamera mengenali ada orang
+            elif self.push and (not current or kind == "people"):
                 cam = self.cameras.get(cam_id, {})
                 asyncio.ensure_future(self.push.notify_motion(
                     cam_id, cam.get("name", cam_id), kind, now, lambda: self._snapshot_bytes(cam)))
             current[kind] = now
         elif not active and kind in current:
             self._write_motion(cam_id, kind, current.pop(kind), now)
+
+    async def _detect_loop(self, cam_id: str):
+        """Selama gerakan berlangsung: periksa beberapa detik stream SD, lalu jeda (makin lama bila kosong)."""
+        cam = self.cameras.get(cam_id, {})
+        url = f"{self.rtsp_base}/{cam.get('live_stream', cam_id)}"
+        notified, gap = set(), 0
+        while True:
+            start = time.time()
+            try:
+                res = await self.detector.analyze(url, cam.get("ignore_zones", ()))
+            except Exception as e:
+                print(f"[Detector] Analisis '{cam_id}' gagal: {e}")
+                return
+            labels = res["labels"]
+            if labels:
+                self._write_motion(cam_id, "object", start, time.time(), labels)
+                new = [k for k in labels if k not in notified]
+                if new:
+                    notified.update(new)
+                    names = ", ".join(LABELS[k][0] for k in labels)
+                    print(f"[Detector] 🎯 '{cam_id}': {names} {res['scores']}")
+                    if self.push:
+                        jpeg = res.get("jpeg")
+
+                        async def _snap(jpeg=jpeg):
+                            return jpeg
+                        name, emoji = LABELS[new[0]]
+                        title = f"{emoji} {', '.join(LABELS[k][0] for k in new)} terdeteksi"
+                        asyncio.ensure_future(self.push.notify_motion(
+                            cam_id, cam.get("name", cam_id), new[0], start, _snap, title=title))
+            gap = 20 if labels else min(60, gap * 2 or 10)
+            for _ in range(gap):
+                if not self._motion_active.get(cam_id):
+                    return
+                await asyncio.sleep(1)
 
     def _split_long_motion(self, cam_id: str):
         now = time.time()
@@ -208,13 +257,16 @@ class CCTVManager:
         for kind, start in list(self._motion_active.pop(cam_id, {}).items()):
             self._write_motion(cam_id, kind, start, now)
 
-    def _write_motion(self, cam_id: str, kind: str, start: float, end: float):
+    def _write_motion(self, cam_id: str, kind: str, start: float, end: float, objects=None):
         day = datetime.datetime.fromtimestamp(start).strftime("%Y-%m-%d")
         folder = os.path.join(self.motion_dir, cam_id)
         try:
             os.makedirs(folder, exist_ok=True)
             with open(os.path.join(folder, day + ".jsonl"), "a") as f:
-                f.write(json.dumps({"s": int(start), "e": max(int(end), int(start) + 1), "k": kind}) + "\n")
+                rec = {"s": int(start), "e": max(int(end), int(start) + 1), "k": kind}
+                if objects:
+                    rec["o"] = list(objects)
+                f.write(json.dumps(rec) + "\n")
             if self._motion_pruned != day:
                 self._motion_pruned = day
                 limit = (datetime.date.today() - datetime.timedelta(days=self.motion_keep_days)).isoformat()
@@ -227,6 +279,7 @@ class CCTVManager:
     def _read_motion(self, cam_id: str, date: str):
         """Kejadian gerakan pada tanggal itu (+ hari sebelumnya untuk yang melewati tengah malam)."""
         events = []
+        detecting = bool(self.detector and self.detector.enabled)
         try:
             day = datetime.date.fromisoformat(date)
         except ValueError:
@@ -237,22 +290,26 @@ class CCTVManager:
                     for line in f:
                         try:
                             ev = json.loads(line)
-                            events.append((int(ev["s"]), int(ev["e"]), ev.get("k") == "people"))
+                            objs = set(ev.get("o") or [])
+                            # Deteksi orang dari kamera sering salah; bila deteksi objek STB aktif, pakai hasil STB
+                            people = "person" in objs or (ev.get("k") == "people" and not detecting)
+                            events.append((int(ev["s"]), int(ev["e"]), people, objs))
                         except (ValueError, KeyError, TypeError):
                             continue
             except OSError:
                 continue
         now = int(time.time())
         for kind, start in self._motion_active.get(cam_id, {}).items():
-            events.append((int(start), now, kind == "people"))
-        # Gabungkan gerakan & orang yang bertumpuk / berdekatan menjadi satu tanda
+            events.append((int(start), now, kind == "people" and not detecting, set()))
+        # Gabungkan gerakan, orang & objek yang bertumpuk / berdekatan menjadi satu tanda
         merged = []
-        for s, e, people in sorted(events):
+        for s, e, people, objs in sorted(events, key=lambda ev: ev[:2]):
             if merged and s <= merged[-1][1] + MOTION_MERGE_GAP:
                 merged[-1][1] = max(merged[-1][1], e)
                 merged[-1][2] = merged[-1][2] or people
+                merged[-1][3] |= objs
             else:
-                merged.append([s, e, people])
+                merged.append([s, e, people, set(objs)])
         return merged
 
     @staticmethod
@@ -260,8 +317,9 @@ class CCTVManager:
         for seg in segments:
             start, end = seg["start_ts"], seg["end_ts"]
             seg["motion"] = [
-                {"t": max(0, s - start), "d": max(1, min(e, end) - max(s, start)), "people": people}
-                for s, e, people in events if s < end and e > start
+                {"t": max(0, s - start), "d": max(1, min(e, end) - max(s, start)), "people": people,
+                 "objs": [{"k": k, "name": LABELS[k][0], "emoji": LABELS[k][1]} for k in sorted(objs) if k in LABELS]}
+                for s, e, people, objs in events if s < end and e > start
             ]
 
     def _camera(self, request):

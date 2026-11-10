@@ -141,7 +141,7 @@ class PushManager:
         self._snapshots[sid] = (now + SNAPSHOT_TTL, jpeg)
         return f"{self.public_url}/push/snap/{sid}.jpg"
 
-    async def notify_motion(self, cam_id: str, cam_name: str, kind: str, ts: float, snapshot=None):
+    async def notify_motion(self, cam_id: str, cam_name: str, kind: str, ts: float, snapshot=None, title=None):
         if not self.enabled or not self.settings().get("motion", True):
             return
         key = (cam_id, kind)
@@ -158,7 +158,7 @@ class PushManager:
             except Exception as e:
                 print(f"[Push] Snapshot gagal: {e}")
         clock = time.strftime("%H:%M:%S", time.localtime(ts))
-        title = "🚶 Orang terdeteksi" if kind == "people" else "Gerakan terdeteksi"
+        title = title or ("🚶 Orang terdeteksi" if kind == "people" else "Gerakan terdeteksi")
         sent = await self.send(title, f"{cam_name} · {clock}", data={
             "type": "motion", "cam": cam_id, "ts": int(ts), "kind": kind, "open": "cctv"}, image_url=image_url)
         print(f"[Push] 🔔 Notifikasi {kind} '{cam_id}' {clock} terkirim ke {sent} perangkat")
