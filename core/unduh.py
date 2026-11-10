@@ -13,6 +13,7 @@ import os
 import re
 import secrets
 import shutil
+import sys
 import time
 import unicodedata
 from urllib.parse import quote, urlparse
@@ -49,7 +50,10 @@ class UnduhManager:
         self.keep_seconds = int(cfg.get("keep_minutes", 60)) * 60
         self.timeout = int(cfg.get("timeout_sec", 600))
         self.tikwm = cfg.get("tikwm_fallback", True)
-        self.ytdlp = cfg.get("yt_dlp") or shutil.which("yt-dlp")
+        # yt-dlp di venv lebih dulu: di sana terpasang curl_cffi untuk menyamar sebagai browser, yang
+        # dibutuhkan TikTok sejak memasang tantangan anti-bot (tanpa itu: "Unexpected response from webpage")
+        venv_ytdlp = os.path.join(os.path.dirname(sys.executable), "yt-dlp")
+        self.ytdlp = cfg.get("yt_dlp") or (venv_ytdlp if os.access(venv_ytdlp, os.X_OK) else shutil.which("yt-dlp"))
         self._sem = None           # dibuat di event loop server (lihat _on_startup)
         self._tasks = {}
         os.makedirs(self.root, exist_ok=True)
