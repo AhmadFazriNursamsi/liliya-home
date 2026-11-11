@@ -484,7 +484,7 @@ const BudiHome = (() => {
 
         function loadPlayer() {
             if (!playerLoaded) {
-                playerLoaded = import('/cctv/live/video-stream.js').catch(err => {
+                playerLoaded = import('/cctv/live/video-stream.js?v=2').catch(err => {
                     playerLoaded = null;
                     throw err;
                 });

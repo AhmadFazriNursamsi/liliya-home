@@ -16,6 +16,19 @@ from core.detector import LABELS, ObjectDetector
 SEGMENT_RE = re.compile(r"^(\d{8})_(\d{6})\.mp4$")
 # File statis player go2rtc yang boleh diambil lewat BUDI (API konfigurasi go2rtc TIDAK diekspos)
 PLAYER_FILES = {"video-stream.js", "video-rtc.js"}
+# Penyesuaian player go2rtc. Bawaannya: playbackRate = jarak ke ujung buffer, sehingga lewat internet
+# yang datang bergelombang video terus melambat/mempercepat (gambar terlihat "goyang"). Diganti dengan
+# kecepatan 1x dan koreksi kecil hanya bila tertinggal jauh / buffer hampir habis.
+PLAYER_VERSION = "2"
+PLAYER_PATCHES = {
+    "video-rtc.js": [(
+        "this.video.playbackRate = gap > 0.1 ? gap : 0.1;",
+        "if (gap > 3) { this.video.currentTime = end - 0.7; }"
+        " const rate = gap > 1.5 ? 1.15 : (gap < 0.25 ? 0.9 : 1.0);"
+        " if (this.video.playbackRate !== rate) this.video.playbackRate = rate;",
+    )],
+    "video-stream.js": [("from './video-rtc.js'", f"from './video-rtc.js?v={PLAYER_VERSION}'")],
+}
 # Event ONVIF yang dicatat sebagai gerakan (Tapo: deteksi gerakan & deteksi orang)
 MOTION_ITEMS = {"IsMotion": "motion", "IsPeople": "people"}
 MOTION_MAX_SECONDS = 600   # gerakan yang tidak pernah "selesai" dipotong per 10 menit
@@ -451,7 +464,13 @@ class CCTVManager:
             async with session.get(f"{self.go2rtc_url}/{name}") as r:
                 if r.status != 200:
                     raise web.HTTPBadGateway()
-                self._player_cache[name] = await r.read()
+                body = (await r.read()).decode("utf-8")
+            for old, new in PLAYER_PATCHES.get(name, []):
+                if old in body:
+                    body = body.replace(old, new)
+                else:
+                    print(f"[CCTV] Penyesuaian player {name} dilewati (versi go2rtc berbeda)")
+            self._player_cache[name] = body.encode("utf-8")
         return web.Response(body=self._player_cache[name], content_type="application/javascript",
                             headers={"Cache-Control": "public, max-age=86400"})
 
