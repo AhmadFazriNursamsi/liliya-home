@@ -174,7 +174,7 @@ class ObjectDetector:
         found = sorted((k for k, n in hits.items() if n >= self.min_hits), key=lambda k: -best[k][0])
         if found:
             self.stats["found"] += 1
-        result = {"labels": found, "scores": {k: round(best[k][0], 2) for k in found}, "frames": len(frames)}
+        result = {"labels": found, "scores": {k: round(float(best[k][0]), 2) for k in found}, "frames": len(frames)}
         if found:
             score, box, rgb = best[found[0]]
             result["jpeg"] = self._annotated_jpeg(rgb, [(k, best[k][0], best[k][1]) for k in found])
@@ -225,7 +225,7 @@ class ObjectDetector:
             rgb, kept = frames[i]
             name = f"{stamp}_{i}.jpg"
             Image.fromarray(rgb).save(os.path.join(folder, name), "JPEG", quality=85)
-            meta["frames"][name] = [{"k": k, "s": round(s, 3), "b": [round(v, 4) for v in b]} for k, s, b in kept]
+            meta["frames"][name] = [{"k": k, "s": round(float(s), 3), "b": [round(float(v), 4) for v in b]} for k, s, b in kept]
         with open(os.path.join(folder, stamp + ".json"), "w") as f:
             json.dump(meta, f)
         self._prune_dataset()
