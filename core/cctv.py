@@ -218,9 +218,11 @@ class CCTVManager:
         while True:
             start = time.time()
             try:
-                res = await self.detector.analyze(url, cam.get("ignore_zones", ()))
+                # batas waktu pengaman: analisis yang macet tidak boleh menghentikan deteksi selamanya
+                res = await asyncio.wait_for(
+                    self.detector.analyze(url, cam.get("ignore_zones", ())), self.detector.window_s + 30)
             except Exception as e:
-                print(f"[Detector] Analisis '{cam_id}' gagal: {e}")
+                print(f"[Detector] Analisis '{cam_id}' gagal: {e!r}")
                 return
             labels = res["labels"]
             if labels:

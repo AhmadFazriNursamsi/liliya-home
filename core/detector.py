@@ -166,7 +166,11 @@ class ObjectDetector:
                     proc.kill()
                 except ProcessLookupError:
                     pass
-            await proc.wait()
+            # Sisa data di pipa stdout harus dibaca habis: selama pipa belum EOF, proc.wait() tidak pernah selesai
+            try:
+                await asyncio.wait_for(proc.communicate(), timeout=5)
+            except (asyncio.TimeoutError, ValueError, OSError):
+                pass
         found = sorted((k for k, n in hits.items() if n >= self.min_hits), key=lambda k: -best[k][0])
         if found:
             self.stats["found"] += 1
