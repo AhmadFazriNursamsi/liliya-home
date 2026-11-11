@@ -37,6 +37,7 @@ MOTION_MERGE_GAP = 5       # kejadian yang berjarak < 5 detik digabung jadi satu
 DETECTION_MERGE_GAP = 60   # deteksi berlabel sama yang berjarak < 60 dtk = satu kejadian di riwayat
 TRACK_BEFORE, TRACK_AFTER = 4, 14   # potongan rekaman yang dilacak: 4 dtk sebelum s/d 14 dtk setelah kejadian
 TRACK_MAX_SECONDS = 90
+CPU_TEMP_PATH = "/sys/class/thermal/thermal_zone0/temp"
 PULL_BODY = ('<PullMessages xmlns="http://www.onvif.org/ver10/events/wsdl"><Timeout>PT30S</Timeout>'
              '<MessageLimit>20</MessageLimit></PullMessages>')
 
@@ -134,6 +135,8 @@ class CCTVManager:
         self.det_dir = os.path.join(self.recordings_dir, ".detections")
         self.det_keep_days = int((cfg.get("detection") or {}).get("history_days", 30))
         self._det_pruned = ""
+        # Pengaman suhu: pelacakan rekaman ditunda saat STB >= batas, lanjut setelah turun 3 derajat
+        self.track_max_temp = float((cfg.get("detection") or {}).get("track_max_temp", 77))
         if self.enabled:
             print(f"[CCTV] 📹 {len(self.cameras)} kamera aktif, rekaman di {self.recordings_dir}")
 
@@ -404,6 +407,24 @@ class CCTVManager:
                 jobs.append((seg, start, dur))
         return jobs
 
+    @staticmethod
+    def _cpu_temp():
+        try:
+            with open(CPU_TEMP_PATH) as f:
+                return int(f.read().strip()) / 1000
+        except (OSError, ValueError):
+            return None
+
+    async def _wait_cool(self):
+        t = self._cpu_temp()
+        if t is None or t < self.track_max_temp:
+            return
+        print(f"[CCTV] 🌡️ Suhu STB {t:.0f}°C: pelacakan rekaman dijeda sampai < {self.track_max_temp - 3:.0f}°C")
+        start = time.time()
+        while (t := self._cpu_temp()) is not None and t >= self.track_max_temp - 3:
+            await asyncio.sleep(15)
+        print(f"[CCTV] 🌡️ Suhu STB {t if t is not None else 0:.0f}°C: pelacakan dilanjutkan (jeda {time.time() - start:.0f} dtk)")
+
     def _busy_detecting(self) -> bool:
         return any(not t.done() for t in self._detect_tasks.values())
 
@@ -436,10 +457,11 @@ class CCTVManager:
                             continue
                         while self._busy_detecting():               # beri jalan deteksi langsung lebih dulu
                             await asyncio.sleep(10)
+                        await self._wait_cool()
                         t0 = time.time()
                         frames = await self.detector.track(
                             os.path.join(self.recordings_dir, cam_id, seg["file"]), start, dur,
-                            [o["k"] for o in ev["objs"]], cam.get("ignore_zones", ()))
+                            [o["k"] for o in ev["objs"]], cam.get("ignore_zones", ()), cool_down=self._wait_cool)
                         merged = {f[0]: f for f in track["frames"]}
                         merged.update({f[0]: f for f in frames})
                         track["frames"] = [merged[k] for k in sorted(merged)]

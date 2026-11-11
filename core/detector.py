@@ -102,7 +102,7 @@ class ObjectDetector:
         return getattr(self, attr)
 
     # ---------- pelacakan di rekaman (kotak bergerak saat diputar ulang) ----------
-    async def track(self, video_path: str, start: float, duration: float, keys, ignore_zones=(), fps: float = 4):
+    async def track(self, video_path: str, start: float, duration: float, keys, ignore_zones=(), fps: float = 4, cool_down=None):
         """Deteksi ulang potongan rekaman [start, start+duration] detik. Hanya kelas `keys` (hasil deteksi
         kejadian itu) yang disimpan. Return daftar [detik_dalam_rekaman, [[kunci, skor, x1, y1, x2, y2], ...]]."""
         if self._bg_pool is None:
@@ -126,6 +126,8 @@ class ObjectDetector:
                     raw = await asyncio.wait_for(proc.stdout.readexactly(size), timeout=30)
                 except (asyncio.IncompleteReadError, asyncio.TimeoutError):
                     break
+                if cool_down:
+                    await cool_down()                   # STB terlalu panas: tunggu dingin dulu
                 rgb = np.frombuffer(raw, np.uint8).reshape(FRAME_H, FRAME_W, 3)
                 dets = await loop.run_in_executor(self._bg_pool, self.infer, rgb, True)
                 boxes = []
