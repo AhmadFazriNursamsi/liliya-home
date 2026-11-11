@@ -5,6 +5,7 @@ import hashlib
 import json
 import os
 import re
+import shutil
 import time
 
 import aiohttp
@@ -33,6 +34,7 @@ PLAYER_PATCHES = {
 MOTION_ITEMS = {"IsMotion": "motion", "IsPeople": "people"}
 MOTION_MAX_SECONDS = 600   # gerakan yang tidak pernah "selesai" dipotong per 10 menit
 MOTION_MERGE_GAP = 5       # kejadian yang berjarak < 5 detik digabung jadi satu tanda
+DETECTION_MERGE_GAP = 60   # deteksi berlabel sama yang berjarak < 60 dtk = satu kejadian di riwayat
 PULL_BODY = ('<PullMessages xmlns="http://www.onvif.org/ver10/events/wsdl"><Timeout>PT30S</Timeout>'
              '<MessageLimit>20</MessageLimit></PullMessages>')
 
@@ -126,6 +128,10 @@ class CCTVManager:
         base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         self.detector = ObjectDetector(config, base_dir) if self.motion_enabled else None
         self._detect_tasks = {}    # cam_id -> asyncio.Task
+        # Riwayat deteksi: {recordings_dir}/.detections/{cam}/YYYY-MM-DD/{ts}.jpg + index.jsonl (foto berkotak)
+        self.det_dir = os.path.join(self.recordings_dir, ".detections")
+        self.det_keep_days = int((cfg.get("detection") or {}).get("history_days", 30))
+        self._det_pruned = ""
         if self.enabled:
             print(f"[CCTV] 📹 {len(self.cameras)} kamera aktif, rekaman di {self.recordings_dir}")
 
@@ -134,6 +140,8 @@ class CCTVManager:
         app.router.add_get("/api/cctv/backup", self.handle_backup)
         app.router.add_get("/api/cctv/{cam}/recordings", self.handle_recordings)
         app.router.add_get("/api/cctv/{cam}/snapshot", self.handle_snapshot)
+        app.router.add_get("/api/cctv/{cam}/detections", self.handle_detections)
+        app.router.add_get("/cctv/det/{cam}/{date}/{file}", self.handle_detection_image)
         app.router.add_post("/api/cctv/{cam}/ptz", self.handle_ptz)
         app.router.add_get("/cctv/rec/{cam}/{file}", self.handle_recording_file)
         app.router.add_get("/cctv/live/api/ws", self.handle_live_ws)
@@ -240,6 +248,8 @@ class CCTVManager:
             labels = res["labels"]
             if labels:
                 self._write_motion(cam_id, "object", start, time.time(), labels)
+                await asyncio.get_running_loop().run_in_executor(
+                    None, self._save_detection, cam_id, start, labels, res.get("scores") or {}, res.get("jpeg"))
                 new = [k for k in labels if k not in notified]
                 if new:
                     notified.update(new)
@@ -290,6 +300,80 @@ class CCTVManager:
                         os.remove(os.path.join(folder, name))
         except OSError as e:
             print(f"[CCTV] Gagal menyimpan catatan gerakan: {e}")
+
+    # ---------- Riwayat deteksi orang/hewan (foto berkotak) ----------
+    def _save_detection(self, cam_id: str, start: float, labels, scores: dict, jpeg):
+        day = datetime.datetime.fromtimestamp(start).strftime("%Y-%m-%d")
+        folder = os.path.join(self.det_dir, cam_id, day)
+        ts = int(start)
+        try:
+            os.makedirs(folder, exist_ok=True)
+            if jpeg:
+                with open(os.path.join(folder, f"{ts}.jpg"), "wb") as f:
+                    f.write(jpeg)
+            with open(os.path.join(folder, "index.jsonl"), "a") as f:
+                f.write(json.dumps({"t": ts, "o": list(labels),
+                                    "sc": {k: float(v) for k, v in scores.items()}, "img": bool(jpeg)}) + "\n")
+            if self._det_pruned != day:
+                self._det_pruned = day
+                limit = (datetime.date.today() - datetime.timedelta(days=self.det_keep_days)).isoformat()
+                for name in os.listdir(os.path.join(self.det_dir, cam_id)):
+                    if len(name) == 10 and name < limit:
+                        shutil.rmtree(os.path.join(self.det_dir, cam_id, name), ignore_errors=True)
+        except OSError as e:
+            print(f"[CCTV] Gagal menyimpan riwayat deteksi: {e}")
+
+    def _read_detections(self, cam_id: str, date: str):
+        """Deteksi pada tanggal itu, terbaru dulu. Deteksi berturut-turut (orang yang lama berdiri di depan
+        kamera dicek tiap ~20 dtk) dengan label sama digabung menjadi satu kejadian."""
+        items = []
+        try:
+            with open(os.path.join(self.det_dir, cam_id, date, "index.jsonl")) as f:
+                for line in f:
+                    try:
+                        d = json.loads(line)
+                        items.append((int(d["t"]), list(d.get("o") or []), d.get("sc") or {}, bool(d.get("img"))))
+                    except (ValueError, KeyError, TypeError):
+                        continue
+        except OSError:
+            return []
+        events = []
+        for t, labels, scores, img in sorted(items):
+            last = events[-1] if events else None
+            if last and t - last["end"] <= DETECTION_MERGE_GAP and set(labels) <= set(last["keys"]):
+                last["end"], last["count"] = t, last["count"] + 1
+                continue
+            if last and t - last["end"] <= DETECTION_MERGE_GAP and set(labels) > set(last["keys"]):
+                # objek baru ikut muncul: perbarui kejadian yang sama dengan foto terbarunya
+                last.update(keys=sorted(set(labels) | set(last["keys"]), key=lambda k: (k != "person", k)), end=t, count=last["count"] + 1,
+                            img=f"{t}.jpg" if img else last["img"])
+                continue
+            events.append({"t": t, "end": t, "count": 1, "keys": list(labels), "scores": scores,
+                           "img": f"{t}.jpg" if img else None})
+        for ev in events:
+            ev["objs"] = [{"k": k, "name": LABELS[k][0], "emoji": LABELS[k][1]} for k in ev.pop("keys") if k in LABELS]
+            if ev["img"]:
+                ev["img"] = f"/cctv/det/{cam_id}/{date}/{ev['img']}"
+        return events[::-1]
+
+    async def handle_detections(self, request):
+        cam = self._camera(request)
+        date = request.query.get("date") or datetime.date.today().isoformat()
+        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", date):
+            raise web.HTTPBadRequest(text="Tanggal tidak valid")
+        events = await asyncio.get_running_loop().run_in_executor(None, self._read_detections, cam["id"], date)
+        return web.json_response({"camera": cam["id"], "date": date,
+                                  "enabled": bool(self.detector and self.detector.enabled), "events": events})
+
+    async def handle_detection_image(self, request):
+        cam = self._camera(request)
+        date, name = request.match_info.get("date", ""), request.match_info.get("file", "")
+        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", date) or not re.fullmatch(r"\d{9,11}\.jpg", name):
+            raise web.HTTPNotFound()
+        path = os.path.join(self.det_dir, cam["id"], date, name)
+        if not os.path.isfile(path):
+            raise web.HTTPNotFound()
+        return web.FileResponse(path, headers={"Content-Type": "image/jpeg", "Cache-Control": "private, max-age=86400"})
 
     def _read_motion(self, cam_id: str, date: str):
         """Kejadian gerakan pada tanggal itu (+ hari sebelumnya untuk yang melewati tengah malam)."""
@@ -415,6 +499,7 @@ class CCTVManager:
             "dates": dates,
             "date": date,
             "motion_enabled": cam["id"] in self.ptz and self.motion_enabled,
+            "detection_enabled": bool(self.detector and self.detector.enabled),
             "segments": segments,
         })
 

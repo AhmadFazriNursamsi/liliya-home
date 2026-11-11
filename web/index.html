@@ -16,7 +16,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="/static/css/liliya.css?v=20261031_v5">
-    <link rel="stylesheet" href="/static/css/home.css?v=20261110_v21">
+    <link rel="stylesheet" href="/static/css/home.css?v=20261111_v22">
 </head>
 <body class="state-idle">
     <div class="app-container" data-tab="assistant">
@@ -121,6 +121,10 @@
                 <div class="push-note" id="cctv-push" hidden></div>
                 <div class="backup-note" id="cctv-backup" hidden></div>
                 <div class="pill-row" id="cctv-dates"></div>
+                <div class="det-panel" id="cctv-detections" hidden>
+                    <div class="det-head"><span><i class="fa-solid fa-user-check"></i> <strong>Riwayat deteksi</strong> <span id="cctv-det-count"></span></span><span class="sub">ketuk untuk memutar</span></div>
+                    <div class="det-list" id="cctv-det-list"></div>
+                </div>
                 <div class="motion-tools" id="cctv-motion-tools" hidden>
                     <span id="cctv-motion-summary"></span>
                     <button class="pill-btn" id="btn-cctv-motion"><i class="fa-solid fa-person-running"></i> Hanya gerakan</button>
@@ -210,7 +214,7 @@
         <button class="tab-btn" data-tab="unduh"><i class="fa-solid fa-download"></i><span>Unduh</span></button>
     </nav>
 
-    <script src="/static/js/home.js?v=20261111_v23"></script>
+    <script src="/static/js/home.js?v=20261111_v24"></script>
     <script src="/static/js/tv-nav.js?v=20261030_v2"></script>
     <script>
 // =========================================================

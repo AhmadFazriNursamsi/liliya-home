@@ -402,6 +402,47 @@
 .motion-count { display: inline-flex; align-items: center; gap: 3px; margin-left: 6px; font-size: 0.7rem; font-weight: 700; color: var(--peach-strong); }
 .motion-count i { color: inherit; font-size: 0.68rem; }
 .motion-count.people { color: var(--red); }
+.motion-count.obj { gap: 1px; color: var(--text); }
+.motion-count.obj.people { color: var(--red); }
+
+/* ---------- Riwayat deteksi orang/hewan ---------- */
+.det-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 10px 12px;
+    border-radius: 12px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+}
+.det-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 0.85rem; flex-wrap: wrap; }
+.det-head i { color: var(--red); }
+.det-head .sub, #cctv-det-count { color: var(--text-muted); font-size: 0.78rem; }
+.det-list { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; scroll-snap-type: x proximity; -webkit-overflow-scrolling: touch; }
+.det-empty { font-size: 0.8rem; color: var(--text-muted); padding: 4px 0; }
+.det-card {
+    flex: 0 0 138px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 0 0 6px;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    background: var(--surface-2, var(--bg));
+    color: var(--text);
+    overflow: hidden;
+    cursor: pointer;
+    text-align: left;
+    scroll-snap-align: start;
+    font: inherit;
+}
+.det-card:hover, .det-card:focus-visible { border-color: var(--border-strong); }
+.det-card.active { border-color: var(--red); box-shadow: 0 0 0 1px var(--red); }
+.det-card img, .det-card .det-noimg { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; display: block; background: #0002; }
+.det-card .det-noimg { display: flex; align-items: center; justify-content: center; font-size: 1.6rem; }
+.det-card .det-label { padding: 0 8px; font-size: 0.8rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.det-card .det-time { padding: 0 8px; font-size: 0.74rem; color: var(--text-muted); font-family: var(--font-mono); }
+.cctv-stage img.det-photo { width: 100%; height: 100%; object-fit: contain; display: block; background: #000; }
 
 .backup-note {
     padding: 10px 12px;

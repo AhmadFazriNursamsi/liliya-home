@@ -452,6 +452,8 @@ const BudiHome = (() => {
         let liveEl = null;
         let motionOnly = false;
         let motionEnabled = false;
+        let detectionEnabled = false;   // deteksi orang/hewan STB aktif: filter & tanda pakai hasil deteksi
+        let detections = [];
 
         const stage = document.getElementById('cctv-stage');
         const badge = document.getElementById('cctv-badge');
@@ -471,6 +473,18 @@ const BudiHome = (() => {
         const fmtClock = ts => { const d = new Date(ts * 1000); return `${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`; };
         const fmtOffset = s => `${pad2(Math.floor(s / 60))}:${pad2(Math.floor(s % 60))}`;
         const hasMotion = s => (s.motion || []).length > 0;
+        const isHit = m => m.people || (m.objs || []).length > 0;
+        // Rekaman yang "penting": ada orang/hewan (bila deteksi aktif), atau sekadar ada gerakan
+        const relevantEvents = s => (s.motion || []).filter(m => !detectionEnabled || isHit(m));
+        const isRelevant = s => relevantEvents(s).length > 0;
+        const objsOf = s => {
+            const seen = new Map();
+            (s.motion || []).forEach(m => (m.objs || []).forEach(o => seen.set(o.k, o)));
+            return [...seen.values()];
+        };
+        const detEl = document.getElementById('cctv-detections');
+        const detList = document.getElementById('cctv-det-list');
+        const detCount = document.getElementById('cctv-det-count');
 
         // Live view dimulai tanpa suara (seperti aplikasi Tapo) agar tidak terjadi feedback/denging
         // saat HP berada di dekat kamera. Suara bisa dinyalakan lewat tombol.
@@ -501,6 +515,64 @@ const BudiHome = (() => {
             if (liveEl) { liveEl.remove(); liveEl = null; }
             stage.querySelectorAll('video.playback').forEach(v => { v.pause(); v.removeAttribute('src'); v.load(); v.remove(); });
             stage.querySelector('.empty-note')?.remove();
+            stage.querySelector('img.det-photo')?.remove();
+            detList.querySelectorAll('.det-card.active').forEach(c => c.classList.remove('active'));
+        }
+
+        // Foto deteksi di layar utama (bila rekamannya sudah terhapus / masih direkam)
+        function showDetectionPhoto(ev) {
+            mode = 'photo';
+            currentFile = null;
+            clearStage();
+            ptzPad.hidden = true;
+            updateTalk();
+            btnLive.classList.remove('active');
+            btnQuality.hidden = true;
+            btnSound.hidden = true;
+            setBadge(`FOTO · ${fmtClock(ev.t)}`, true);
+            const img = document.createElement('img');
+            img.className = 'det-photo';
+            img.alt = (ev.objs || []).map(o => o.name).join(', ');
+            img.src = ev.img;
+            stage.prepend(img);
+            meta.hidden = true;
+            renderSegments();
+        }
+
+        function openDetection(ev, card) {
+            const seg = segments.find(s => ev.t >= s.start_ts && ev.t <= s.end_ts);
+            if (seg && !seg.recording) {
+                playSegment(seg.file, ev.t - seg.start_ts);
+            } else if (ev.img) {
+                if (seg && seg.recording) toast('Rekaman jam ini masih berjalan, foto deteksi ditampilkan dulu.');
+                showDetectionPhoto(ev);
+            } else {
+                toast('Rekaman untuk kejadian ini sudah tidak tersedia.');
+                return;
+            }
+            card?.classList.add('active');
+        }
+
+        async function loadDetections(date) {
+            if (!cam || !detectionEnabled) { detEl.hidden = true; return; }
+            try {
+                const data = await api(`/api/cctv/${encodeURIComponent(cam.id)}/detections?date=${encodeURIComponent(date || '')}`);
+                detections = data.events || [];
+            } catch (e) {
+                detEl.hidden = true;
+                return;
+            }
+            detEl.hidden = false;
+            detCount.textContent = detections.length ? `· ${detections.length} kejadian` : '';
+            detList.innerHTML = detections.length ? detections.map((ev, i) => {
+                const label = (ev.objs || []).map(o => `${o.emoji} ${esc(o.name)}`).join(', ') || 'Objek';
+                const pic = ev.img
+                    ? `<img src="${esc(ev.img)}" alt="" loading="lazy">`
+                    : `<span class="det-noimg">${(ev.objs || []).map(o => o.emoji).join('') || '👀'}</span>`;
+                const span = ev.end > ev.t ? ` – ${fmtClock(ev.end).slice(0, 5)}` : '';
+                return `<button class="det-card" data-idx="${i}">${pic}<span class="det-label">${label}</span>
+                    <span class="det-time">${fmtClock(ev.t)}${span}</span></button>`;
+            }).join('') : '<div class="det-empty">Belum ada orang atau hewan terdeteksi pada tanggal ini.</div>';
         }
 
         async function startLive() {
@@ -530,7 +602,7 @@ const BudiHome = (() => {
             liveEl.src = `/cctv/live/api/ws?src=${encodeURIComponent(quality === 'hd' ? cam.hd_stream : cam.live_stream)}`;
         }
 
-        function playSegment(file) {
+        function playSegment(file, seekTo = null) {
             const seg = segments.find(s => s.file === file);
             if (!seg || seg.recording) return;
             mode = 'playback';
@@ -551,12 +623,14 @@ const BudiHome = (() => {
             v.src = `/cctv/rec/${encodeURIComponent(cam.id)}/${encodeURIComponent(file)}`;
             const playNext = () => {
                 const idx = segments.findIndex(s => s.file === file);
-                const next = segments.slice(idx + 1).find(s => !motionOnly || hasMotion(s));
+                const next = segments.slice(idx + 1).find(s => !motionOnly || isRelevant(s));
                 if (next && !next.recording) playSegment(next.file);
             };
-            // Mode "Hanya gerakan": langsung lompat ke gerakan pertama di segmen ini
-            if (motionOnly && hasMotion(seg)) {
-                v.addEventListener('loadedmetadata', () => { v.currentTime = Math.max(0, seg.motion[0].t - 3); }, { once: true });
+            // Dari riwayat deteksi: mulai 3 detik sebelum kejadian.
+            // Mode "Hanya orang & hewan" / "Hanya gerakan": lompat ke kejadian pertama di segmen ini
+            const startAt = seekTo !== null ? seekTo : (motionOnly && isRelevant(seg) ? relevantEvents(seg)[0].t : null);
+            if (startAt !== null) {
+                v.addEventListener('loadedmetadata', () => { v.currentTime = Math.max(0, startAt - 3); }, { once: true });
             }
             v.addEventListener('ended', playNext);
             v.addEventListener('error', () => {
@@ -680,6 +754,11 @@ const BudiHome = (() => {
                 const data = await api(`/api/cctv/${encodeURIComponent(cam.id)}/recordings${date ? '?date=' + encodeURIComponent(date) : ''}`);
                 segments = data.segments || [];
                 motionEnabled = !!data.motion_enabled;
+                detectionEnabled = motionEnabled && !!data.detection_enabled;
+                btnMotion.innerHTML = detectionEnabled
+                    ? '<i class="fa-solid fa-user-check"></i> Hanya orang & hewan'
+                    : '<i class="fa-solid fa-person-running"></i> Hanya gerakan';
+                loadDetections(data.date);
                 dateRow.innerHTML = (data.dates || []).map(dt =>
                     `<button class="pill-btn ${dt === data.date ? 'active' : ''}" data-date="${esc(dt)}">${esc(dateLabel(dt))}</button>`).join('')
                     || '<span class="sub">Belum ada rekaman.</span>';
@@ -689,11 +768,33 @@ const BudiHome = (() => {
             }
         }
 
+        // Tanda di tombol rekaman: emoji orang/hewan yang terdeteksi, atau jumlah gerakan biasa
+        function segmentBadge(s) {
+            if (!hasMotion(s)) return '';
+            const objs = objsOf(s);
+            const people = s.motion.some(m => m.people);
+            if (objs.length) {
+                const n = relevantEvents(s).length;
+                return `<span class="motion-count obj ${people ? 'people' : ''}" title="${esc(objs.map(o => o.name).join(', '))} · ${n} kejadian">${objs.map(o => o.emoji).join('')}${n > 1 ? n : ''}</span>`;
+            }
+            if (detectionEnabled) {
+                return `<span class="motion-count" title="${s.motion.length} gerakan tanpa orang/hewan" style="opacity:.55"><i class="fa-solid fa-person-running"></i>${s.motion.length}</span>`;
+            }
+            return `<span class="motion-count ${people ? 'people' : ''}" title="${s.motion.length} gerakan"><i class="fa-solid fa-person-running"></i>${s.motion.length}</span>`;
+        }
+
         function renderSegments() {
-            const withMotion = segments.filter(hasMotion);
+            const withMotion = segments.filter(isRelevant);
             motionTools.hidden = !motionEnabled || !segments.length;
-            const totalEvents = withMotion.reduce((n, s) => n + s.motion.length, 0);
-            motionSummary.textContent = totalEvents ? `${totalEvents} gerakan di ${withMotion.length} rekaman` : 'Belum ada gerakan hari ini';
+            const totalEvents = segments.reduce((n, s) => n + (s.motion || []).length, 0);
+            if (detectionEnabled) {
+                const hits = withMotion.reduce((n, s) => n + relevantEvents(s).length, 0);
+                motionSummary.textContent = hits
+                    ? `${hits} orang/hewan di ${withMotion.length} rekaman · ${totalEvents} gerakan`
+                    : (totalEvents ? `${totalEvents} gerakan, tanpa orang/hewan` : 'Belum ada gerakan');
+            } else {
+                motionSummary.textContent = totalEvents ? `${totalEvents} gerakan di ${withMotion.length} rekaman` : 'Belum ada gerakan hari ini';
+            }
             btnMotion.classList.toggle('active', motionOnly);
             if (!segments.length) {
                 hoursBox.innerHTML = '<div class="empty-note">Belum ada rekaman untuk tanggal ini.</div>';
@@ -701,7 +802,7 @@ const BudiHome = (() => {
             }
             const shown = motionOnly && motionEnabled ? withMotion : segments;
             if (!shown.length) {
-                hoursBox.innerHTML = '<div class="empty-note">Tidak ada gerakan terdeteksi pada tanggal ini.</div>';
+                hoursBox.innerHTML = `<div class="empty-note">${detectionEnabled ? 'Tidak ada orang atau hewan' : 'Tidak ada gerakan'} terdeteksi pada tanggal ini.</div>`;
                 return;
             }
             const byHour = new Map();
@@ -713,7 +814,7 @@ const BudiHome = (() => {
             hoursBox.innerHTML = [...byHour.entries()].sort((a, b) => b[0].localeCompare(a[0])).map(([h, list]) => `
                 <div class="segment-hour"><span class="hour-label">${h}:00</span>
                     <div class="pill-row">${list.map(s => `<button class="pill-btn segment-btn ${s.file === currentFile ? 'active' : ''} ${s.recording ? 'recording' : ''}" data-file="${esc(s.file)}" ${s.recording ? 'disabled title="Sedang direkam"' : ''}>
-                        ${s.recording ? '<i class="fa-solid fa-circle" style="color:var(--accent-red);font-size:.55rem"></i>' : ''}${esc(s.start.slice(0, 5))}${hasMotion(s) ? `<span class="motion-count ${s.motion.some(m => m.people) ? 'people' : ''}" title="${s.motion.length} gerakan"><i class="fa-solid fa-person-running"></i>${s.motion.length}</span>` : ''}</button>`).join('')}
+                        ${s.recording ? '<i class="fa-solid fa-circle" style="color:var(--accent-red);font-size:.55rem"></i>' : ''}${esc(s.start.slice(0, 5))}${segmentBadge(s)}</button>`).join('')}
                     </div></div>`).join('');
         }
 
@@ -947,6 +1048,11 @@ const BudiHome = (() => {
         dateRow.addEventListener('click', e => { const b = e.target.closest('[data-date]'); if (b) loadRecordings(b.dataset.date); });
         hoursBox.addEventListener('click', e => { const b = e.target.closest('[data-file]'); if (b && !b.disabled) playSegment(b.dataset.file); });
         btnMotion.addEventListener('click', () => { motionOnly = !motionOnly; renderSegments(); });
+        detList.addEventListener('click', e => {
+            const card = e.target.closest('[data-idx]');
+            const ev = card && detections[Number(card.dataset.idx)];
+            if (ev) openDetection(ev, card);
+        });
         ptzPad.addEventListener('click', e => { const b = e.target.closest('[data-dir]'); if (b) ptz(b.dataset.dir); });
         btnLive.addEventListener('click', () => { meta.hidden = true; startLive(); });
         btnQuality.addEventListener('click', () => { quality = quality === 'hd' ? 'sd' : 'hd'; startLive(); });
