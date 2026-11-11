@@ -874,3 +874,11 @@ a.rt-device { text-decoration: none; }
 .door-log li { display: flex; gap: 10px; padding: 3px 0; font-size: 0.78rem; color: var(--text-muted); }
 .door-log time { flex: none; width: 76px; font-variant-numeric: tabular-nums; color: var(--text-sub); }
 .door-log code { font-family: var(--font-mono); font-size: 0.72rem; }
+
+/* ---------- Kotak deteksi bergerak di rekaman ---------- */
+.cctv-stage canvas.det-overlay { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 1; }
+.cctv-stage:fullscreen { aspect-ratio: auto; border-radius: 0; background: #000; }
+.cctv-stage:-webkit-full-screen { aspect-ratio: auto; border-radius: 0; background: #000; }
+.track-note { font-size: 0.8rem; color: var(--text-muted); }
+.track-note:empty { display: none; }
+.track-note i { color: var(--red); margin-right: 4px; }

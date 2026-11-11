@@ -35,6 +35,8 @@ MOTION_ITEMS = {"IsMotion": "motion", "IsPeople": "people"}
 MOTION_MAX_SECONDS = 600   # gerakan yang tidak pernah "selesai" dipotong per 10 menit
 MOTION_MERGE_GAP = 5       # kejadian yang berjarak < 5 detik digabung jadi satu tanda
 DETECTION_MERGE_GAP = 60   # deteksi berlabel sama yang berjarak < 60 dtk = satu kejadian di riwayat
+TRACK_BEFORE, TRACK_AFTER = 4, 14   # potongan rekaman yang dilacak: 4 dtk sebelum s/d 14 dtk setelah kejadian
+TRACK_MAX_SECONDS = 90
 PULL_BODY = ('<PullMessages xmlns="http://www.onvif.org/ver10/events/wsdl"><Timeout>PT30S</Timeout>'
              '<MessageLimit>20</MessageLimit></PullMessages>')
 
@@ -142,6 +144,7 @@ class CCTVManager:
         app.router.add_get("/api/cctv/{cam}/snapshot", self.handle_snapshot)
         app.router.add_get("/api/cctv/{cam}/detections", self.handle_detections)
         app.router.add_get("/cctv/det/{cam}/{date}/{file}", self.handle_detection_image)
+        app.router.add_get("/api/cctv/{cam}/tracks/{file}", self.handle_tracks)
         app.router.add_post("/api/cctv/{cam}/ptz", self.handle_ptz)
         app.router.add_get("/cctv/rec/{cam}/{file}", self.handle_recording_file)
         app.router.add_get("/cctv/live/api/ws", self.handle_live_ws)
@@ -155,6 +158,8 @@ class CCTVManager:
             return
         for cam_id, onvif in self.ptz.items():
             self._motion_tasks.append(asyncio.ensure_future(self._motion_watch(cam_id, onvif)))
+        if self.detector and self.detector.enabled:
+            self._motion_tasks.append(asyncio.ensure_future(self._track_loop()))
 
     async def _stop_motion(self, app):
         for t in self._motion_tasks + list(self._detect_tasks.values()):
@@ -355,6 +360,114 @@ class CCTVManager:
             if ev["img"]:
                 ev["img"] = f"/cctv/det/{cam_id}/{date}/{ev['img']}"
         return events[::-1]
+
+    # ---------- Kotak bergerak di rekaman: deteksi ulang potongan rekaman di sekitar tiap kejadian ----------
+    # Hasil per segmen: {det_dir}/{cam}/tracks/{nama segmen}.json = {"done": [t kejadian], "frames": [[detik, kotak]]}
+    def _track_path(self, cam_id: str, seg_file: str) -> str:
+        return os.path.join(self.det_dir, cam_id, "tracks", seg_file.replace(".mp4", ".json"))
+
+    def _load_track(self, cam_id: str, seg_file: str) -> dict:
+        try:
+            with open(self._track_path(cam_id, seg_file)) as f:
+                data = json.load(f)
+                return {"done": list(data.get("done") or []), "frames": list(data.get("frames") or [])}
+        except (OSError, ValueError):
+            return {"done": [], "frames": []}
+
+    def _save_track(self, cam_id: str, seg_file: str, data: dict):
+        path = self._track_path(cam_id, seg_file)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path + ".tmp", "w") as f:
+            json.dump(data, f, separators=(",", ":"))
+        os.replace(path + ".tmp", path)
+        # rekaman hanya disimpan beberapa hari; hasil pelacakan lama ikut dihapus
+        folder = os.path.dirname(path)
+        limit = time.time() - (self.motion_keep_days + 3) * 86400
+        for name in os.listdir(folder):
+            p = os.path.join(folder, name)
+            try:
+                if os.path.getmtime(p) < limit:
+                    os.remove(p)
+            except OSError:
+                pass
+
+    def _track_jobs(self, cam_id: str, ev: dict, segments):
+        """Potongan rekaman (segmen, detik awal, durasi) yang perlu dilacak untuk satu kejadian."""
+        lo, hi = ev["t"] - TRACK_BEFORE, ev["end"] + TRACK_AFTER
+        jobs = []
+        for seg in segments:
+            if seg["end_ts"] <= lo or seg["start_ts"] >= hi:
+                continue
+            start = max(0, lo - seg["start_ts"])
+            dur = min(min(seg["end_ts"], hi) - seg["start_ts"] - start, TRACK_MAX_SECONDS)
+            if dur >= 1:
+                jobs.append((seg, start, dur))
+        return jobs
+
+    def _busy_detecting(self) -> bool:
+        return any(not t.done() for t in self._detect_tasks.values())
+
+    async def _track_loop(self):
+        await asyncio.sleep(90)
+        while True:
+            try:
+                await self._track_pending()
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                print(f"[CCTV] Pelacakan rekaman gagal: {e!r}")
+            await asyncio.sleep(60)
+
+    async def _track_pending(self):
+        loop = asyncio.get_running_loop()
+        today = datetime.date.today()
+        for cam_id, cam in self.cameras.items():
+            segments = await loop.run_in_executor(None, self._list_segments, cam_id)
+            for day in (today, today - datetime.timedelta(days=1)):
+                events = await loop.run_in_executor(None, self._read_detections, cam_id, day.isoformat())
+                for ev in events:                                   # terbaru dulu
+                    if time.time() - ev["end"] < 30:
+                        continue                                    # kejadian masih berlangsung
+                    for seg, start, dur in self._track_jobs(cam_id, ev, segments):
+                        if seg["recording"]:
+                            continue                                # tunggu rekaman 10 menit ini selesai
+                        track = await loop.run_in_executor(None, self._load_track, cam_id, seg["file"])
+                        if ev["t"] in track["done"]:
+                            continue
+                        while self._busy_detecting():               # beri jalan deteksi langsung lebih dulu
+                            await asyncio.sleep(10)
+                        t0 = time.time()
+                        frames = await self.detector.track(
+                            os.path.join(self.recordings_dir, cam_id, seg["file"]), start, dur,
+                            [o["k"] for o in ev["objs"]], cam.get("ignore_zones", ()))
+                        merged = {f[0]: f for f in track["frames"]}
+                        merged.update({f[0]: f for f in frames})
+                        track["frames"] = [merged[k] for k in sorted(merged)]
+                        track["done"].append(ev["t"])
+                        await loop.run_in_executor(None, self._save_track, cam_id, seg["file"], track)
+                        boxes = sum(1 for f in frames if f[1])
+                        print(f"[CCTV] 🎞️ Kotak rekaman {seg['file']} @{int(start)}s: "
+                              f"{boxes}/{len(frames)} frame berisi objek ({time.time() - t0:.0f} dtk)")
+
+    async def handle_tracks(self, request):
+        cam = self._camera(request)
+        name = request.match_info.get("file", "")
+        m = SEGMENT_RE.match(name)
+        if not m:
+            raise web.HTTPNotFound()
+        loop = asyncio.get_running_loop()
+        track = await loop.run_in_executor(None, self._load_track, cam["id"], name)
+        # masih ada kejadian di segmen ini yang belum dilacak?
+        pending = False
+        if self.detector and self.detector.enabled:
+            seg = next((s for s in await loop.run_in_executor(None, self._list_segments, cam["id"]) if s["file"] == name), None)
+            if seg:
+                date = seg["date"]
+                events = await loop.run_in_executor(None, self._read_detections, cam["id"], date)
+                pending = any(ev["t"] not in track["done"] and self._track_jobs(cam["id"], ev, [seg]) for ev in events)
+        return web.json_response({"frames": track["frames"], "pending": pending,
+                                  "labels": {k: list(v) for k, v in LABELS.items()}},
+                                  headers={"Cache-Control": "no-store"})
 
     async def handle_detections(self, request):
         cam = self._camera(request)

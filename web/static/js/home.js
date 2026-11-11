@@ -516,6 +516,7 @@ const BudiHome = (() => {
             stage.querySelectorAll('video.playback').forEach(v => { v.pause(); v.removeAttribute('src'); v.load(); v.remove(); });
             stage.querySelector('.empty-note')?.remove();
             stage.querySelector('img.det-photo')?.remove();
+            stage.querySelector('canvas.det-overlay')?.remove();
             detList.querySelectorAll('.det-card.active').forEach(c => c.classList.remove('active'));
         }
 
@@ -602,6 +603,106 @@ const BudiHome = (() => {
             liveEl.src = `/cctv/live/api/ws?src=${encodeURIComponent(quality === 'hd' ? cam.hd_stream : cam.live_stream)}`;
         }
 
+        // ---------- Kotak deteksi yang ikut bergerak di rekaman ----------
+        // Posisi kotak per frame (4 fps) dibuat STB di latar setelah rekaman selesai; di sini dihaluskan
+        // (interpolasi antar-frame) dan digambar di atas video sesuai area gambar sebenarnya (object-fit: contain).
+        const TRACK_COLORS = { person: '#ff3b30' };
+        function attachTrackOverlay(v, seg) {
+            const canvas = document.createElement('canvas');
+            canvas.className = 'det-overlay';
+            stage.appendChild(canvas);
+            const ctx = canvas.getContext('2d');
+            let frames = [];
+            let labels = {};
+            const note = document.createElement('div');
+            note.className = 'track-note';
+            meta.appendChild(note);
+            api(`/api/cctv/${encodeURIComponent(cam.id)}/tracks/${encodeURIComponent(seg.file)}`).then(d => {
+                frames = d.frames || [];
+                labels = d.labels || {};
+                const has = frames.some(f => f[1].length);
+                note.innerHTML = has
+                    ? '<i class="fa-solid fa-crosshairs"></i> Kotak deteksi aktif di sekitar kejadian'
+                    : (d.pending ? '<i class="fa-solid fa-hourglass-half"></i> Kotak deteksi sedang disiapkan STB (beberapa menit setelah rekaman selesai)' : '');
+            }).catch(() => {});
+
+            function boxesAt(t) {
+                if (!frames.length) return [];
+                let lo = 0, hi = frames.length - 1;
+                while (lo < hi) {                       // frame terakhir dengan waktu <= t
+                    const mid = (lo + hi + 1) >> 1;
+                    if (frames[mid][0] <= t) lo = mid; else hi = mid - 1;
+                }
+                const a = frames[lo][0] <= t ? frames[lo] : null;
+                const b = a ? frames[lo + 1] : frames[0];
+                if (!a) return b && b[0] - t < 0.3 ? b[1] : [];
+                if (t - a[0] > 0.6) return b && b[0] - t < 0.3 ? b[1] : [];
+                if (!b || b[0] - a[0] > 0.6) return a[1];
+                const f = (t - a[0]) / (b[0] - a[0]);
+                return a[1].map(box => {
+                    const cx = (box[2] + box[4]) / 2, cy = (box[3] + box[5]) / 2;
+                    let best = null, bestD = 0.25;
+                    b[1].forEach(o => {
+                        if (o[0] !== box[0]) return;
+                        const d = Math.hypot((o[2] + o[4]) / 2 - cx, (o[3] + o[5]) / 2 - cy);
+                        if (d < bestD) { bestD = d; best = o; }
+                    });
+                    if (!best) return f < 0.5 ? box : null;
+                    return [box[0], box[1] + (best[1] - box[1]) * f, ...[2, 3, 4, 5].map(i => box[i] + (best[i] - box[i]) * f)];
+                }).filter(Boolean);
+            }
+
+            function draw() {
+                if (!canvas.isConnected) return;
+                requestAnimationFrame(draw);
+                const dpr = window.devicePixelRatio || 1;
+                const w = canvas.clientWidth, h = canvas.clientHeight;
+                if (canvas.width !== Math.round(w * dpr) || canvas.height !== Math.round(h * dpr)) {
+                    canvas.width = Math.round(w * dpr);
+                    canvas.height = Math.round(h * dpr);
+                }
+                ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+                ctx.clearRect(0, 0, w, h);
+                if (!frames.length || !v.videoWidth) return;
+                const sc = Math.min(w / v.videoWidth, h / v.videoHeight);
+                const cw = v.videoWidth * sc, ch = v.videoHeight * sc, ox = (w - cw) / 2, oy = (h - ch) / 2;
+                const fs = Math.max(11, Math.min(15, cw / 45));
+                boxesAt(v.currentTime).forEach(([k, score, x1, y1, x2, y2]) => {
+                    const color = TRACK_COLORS[k] || '#34c759';
+                    const bx = ox + x1 * cw, by = oy + y1 * ch, bw = (x2 - x1) * cw, bh = (y2 - y1) * ch;
+                    const c = Math.max(8, Math.min(bw, bh) * 0.22);
+                    // isi tipis + garis tipis + sudut tebal
+                    ctx.fillStyle = color + '1f';
+                    ctx.fillRect(bx, by, bw, bh);
+                    ctx.strokeStyle = color + '99';
+                    ctx.lineWidth = 1;
+                    ctx.strokeRect(bx, by, bw, bh);
+                    ctx.strokeStyle = color;
+                    ctx.lineWidth = 3;
+                    ctx.lineCap = 'round';
+                    ctx.beginPath();
+                    [[bx, by, 1, 1], [bx + bw, by, -1, 1], [bx, by + bh, 1, -1], [bx + bw, by + bh, -1, -1]].forEach(([x, y, dx, dy]) => {
+                        ctx.moveTo(x + dx * c, y); ctx.lineTo(x, y); ctx.lineTo(x, y + dy * c);
+                    });
+                    ctx.stroke();
+                    // label: emoji nama skor
+                    const [name, emoji] = labels[k] || [k, ''];
+                    const text = `${emoji} ${name} ${Math.round(score * 100)}%`;
+                    ctx.font = `600 ${fs}px system-ui, sans-serif`;
+                    const tw = ctx.measureText(text).width + 12, th = fs + 8;
+                    const ly = by - th - 3 >= oy ? by - th - 3 : by + 3;
+                    ctx.fillStyle = color;
+                    ctx.beginPath();
+                    if (ctx.roundRect) ctx.roundRect(bx, ly, tw, th, 6); else ctx.rect(bx, ly, tw, th);
+                    ctx.fill();
+                    ctx.fillStyle = '#fff';
+                    ctx.textBaseline = 'middle';
+                    ctx.fillText(text, bx + 6, ly + th / 2 + 1);
+                });
+            }
+            requestAnimationFrame(draw);
+        }
+
         function playSegment(file, seekTo = null) {
             const seg = segments.find(s => s.file === file);
             if (!seg || seg.recording) return;
@@ -644,6 +745,7 @@ const BudiHome = (() => {
                 <a class="pill-btn" href="${v.src}?download=1" download><i class="fa-solid fa-download"></i> Unduh</a></div>
                 ${renderMotionTrack(seg)}`;
             meta.hidden = false;
+            if (detectionEnabled && relevantEvents(seg).length) attachTrackOverlay(v, seg);
 
             const track = meta.querySelector('.motion-track');
             if (track) {
@@ -1062,7 +1164,7 @@ const BudiHome = (() => {
             if (soundOn) toast('Suara aktif. Jauhkan HP dari kamera agar tidak berdenging.');
         });
         btnFull.addEventListener('click', () => {
-            const target = stage.querySelector('video') || stage;
+            const target = (stage.querySelector('canvas.det-overlay') && stage.requestFullscreen) ? stage : (stage.querySelector('video') || stage);
             const req = target.requestFullscreen || target.webkitRequestFullscreen || target.webkitEnterFullscreen;
             if (req) req.call(target);
         });

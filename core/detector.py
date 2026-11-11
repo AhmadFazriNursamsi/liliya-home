@@ -17,7 +17,9 @@ import io
 import json
 import os
 import shutil
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 
 import numpy as np
 
@@ -74,6 +76,8 @@ class ObjectDetector:
         self.dataset_max_mb = int(cfg.get("dataset_max_mb", 3000))
         self.dataset_per_day = int(cfg.get("dataset_events_per_day", 400))
         self._session = None
+        self._bg_session = None
+        self._bg_pool = None
         self._saved_today = {}
         self.stats = {"events": 0, "frames": 0, "found": 0, "infer_ms": None}
         if self.enabled and ort is None:
@@ -86,16 +90,65 @@ class ObjectDetector:
             print(f"[Detector] 🧠 Deteksi orang & hewan aktif ({os.path.basename(self.model_path)}, {self.imgsz}px)")
 
     # ---------- model ----------
-    def _model(self):
-        if self._session is None:
+    def _model(self, background=False):
+        attr = "_bg_session" if background else "_session"
+        if getattr(self, attr, None) is None:
             opts = ort.SessionOptions()
-            opts.intra_op_num_threads = self.threads
+            # sesi latar (pelacakan rekaman): 1 thread, berjalan di thread berprioritas rendah
+            opts.intra_op_num_threads = 1 if background else self.threads
             opts.inter_op_num_threads = 1
-            self._session = ort.InferenceSession(self.model_path, opts, providers=["CPUExecutionProvider"])
-            self._input = self._session.get_inputs()[0].name
-        return self._session
+            setattr(self, attr, ort.InferenceSession(self.model_path, opts, providers=["CPUExecutionProvider"]))
+            self._input = getattr(self, attr).get_inputs()[0].name
+        return getattr(self, attr)
 
-    def infer(self, rgb: np.ndarray):
+    # ---------- pelacakan di rekaman (kotak bergerak saat diputar ulang) ----------
+    async def track(self, video_path: str, start: float, duration: float, keys, ignore_zones=(), fps: float = 4):
+        """Deteksi ulang potongan rekaman [start, start+duration] detik. Hanya kelas `keys` (hasil deteksi
+        kejadian itu) yang disimpan. Return daftar [detik_dalam_rekaman, [[kunci, skor, x1, y1, x2, y2], ...]]."""
+        if self._bg_pool is None:
+            def lower_priority():
+                try:
+                    os.setpriority(os.PRIO_PROCESS, threading.get_native_id(), 15)
+                except (OSError, AttributeError):
+                    pass
+            self._bg_pool = ThreadPoolExecutor(1, thread_name_prefix="track", initializer=lower_priority)
+        proc = await asyncio.create_subprocess_exec(
+            "nice", "-n", "15", "ffmpeg", "-hide_banner", "-loglevel", "error", "-threads", "1",
+            "-ss", f"{max(0.0, start):.2f}", "-i", video_path, "-t", f"{duration:.2f}", "-an",
+            "-vf", f"fps={fps},scale={FRAME_W}:{FRAME_H}", "-f", "rawvideo", "-pix_fmt", "rgb24", "-",
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL)
+        size = FRAME_W * FRAME_H * 3
+        loop = asyncio.get_running_loop()
+        keys, out, i = set(keys), [], 0
+        try:
+            while True:
+                try:
+                    raw = await asyncio.wait_for(proc.stdout.readexactly(size), timeout=30)
+                except (asyncio.IncompleteReadError, asyncio.TimeoutError):
+                    break
+                rgb = np.frombuffer(raw, np.uint8).reshape(FRAME_H, FRAME_W, 3)
+                dets = await loop.run_in_executor(self._bg_pool, self.infer, rgb, True)
+                boxes = []
+                for key, score, box in dets:
+                    cx, cy = (box[0] + box[2]) / 2, (box[1] + box[3]) / 2
+                    if key not in keys or any(z[0] <= cx <= z[2] and z[1] <= cy <= z[3] for z in ignore_zones):
+                        continue
+                    boxes.append([key, round(score, 2)] + [round(float(v), 4) for v in box])
+                out.append([round(start + i / fps, 2), boxes])
+                i += 1
+        finally:
+            if proc.returncode is None:
+                try:
+                    proc.kill()
+                except ProcessLookupError:
+                    pass
+            try:
+                await asyncio.wait_for(proc.communicate(), timeout=5)
+            except (asyncio.TimeoutError, ValueError, OSError):
+                pass
+        return out
+
+    def infer(self, rgb: np.ndarray, background=False):
         """Gambar RGB (H, W, 3) -> daftar (kunci, skor, kotak ternormalisasi x1,y1,x2,y2)."""
         h, w = rgb.shape[:2]
         r = self.imgsz / max(w, h)
@@ -104,7 +157,7 @@ class ObjectDetector:
         canvas[:nh, :nw] = np.asarray(Image.fromarray(rgb).resize((nw, nh), Image.BILINEAR))
         x = (canvas.astype(np.float32) / 255.0).transpose(2, 0, 1)[None]
         t0 = time.time()
-        out = self._model().run(None, {self._input: x})[0][0].T          # (anchors, 4 + kelas)
+        out = self._model(background).run(None, {self._input: x})[0][0].T          # (anchors, 4 + kelas)
         self.stats["infer_ms"] = round((time.time() - t0) * 1000)
         self.stats["frames"] += 1
         scores = out[:, 4:]
