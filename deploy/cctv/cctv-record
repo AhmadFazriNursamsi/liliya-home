@@ -3,6 +3,15 @@
 CAM="$1"
 DIR="${CCTV_DIR:-/srv/cctv}/$CAM"
 mkdir -p "$DIR"
+# Setelah listrik padam STB menyala dengan jam lama (fake-hwclock) sampai tersinkron NTP; nama file
+# dan timestamp rekaman memakai jam ini, jadi tunggu sinkron dulu (maks CCTV_CLOCK_WAIT detik,
+# setelah itu tetap merekam agar CCTV tidak berhenti saat internet mati).
+WAIT="${CCTV_CLOCK_WAIT:-120}"
+while [ "$WAIT" -gt 0 ] && [ "$(timedatectl show -p NTPSynchronized --value 2>/dev/null)" != "yes" ]; do
+  [ "$WAIT" = "${CCTV_CLOCK_WAIT:-120}" ] && echo "Menunggu jam STB tersinkron sebelum merekam..."
+  sleep 2
+  WAIT=$((WAIT - 2))
+done
 # Timestamp memakai jam STB (wallclock): bila kamera putus-sambung, timestamp RTP kamera
 # mulai dari nol lagi dan membuat file rusak (durasi salah, player terus loading).
 exec ffmpeg -nostdin -hide_banner -loglevel warning \
