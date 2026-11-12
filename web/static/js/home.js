@@ -89,7 +89,7 @@ const BudiHome = (() => {
                 ${switchable ? '<span class="switch"></span>' : ''}
             </div>
             <div class="dev-bottom">
-                <div><div class="dev-room">${esc(d.room || '')}</div><div class="dev-name">${esc(d.name || d.id)}</div><div class="dev-state">${esc(describe(d))}${d.online === false ? ' <span class="dev-badge">Offline</span>' : ''}</div></div>
+                <div><div class="dev-room">${esc(d.room || '')}</div><div class="dev-name">${esc(d.name || d.id)}</div><div class="dev-state">${esc(describe(d))}${d.online === false ? ' <span class="dev-badge">Offline</span>' : d.unresponsive ? ' <span class="dev-badge" title="Perintah terkirim tapi lampu tidak berubah. Mungkin di luar jangkauan gateway.">Tidak merespons</span>' : ''}</div></div>
                 <button class="dev-edit" data-act="edit" aria-label="Edit ${esc(d.name || d.id)}" title="Edit perangkat"><i class="fa-solid fa-pen"></i></button>
             </div>
             ${extra}

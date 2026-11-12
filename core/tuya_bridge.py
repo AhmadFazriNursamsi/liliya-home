@@ -37,6 +37,8 @@ class TuyaCloudBridge:
         self._offline_since: Dict[str, float] = {}  # tuya_dev_id -> pertama kali dilaporkan offline
         self.offline_grace = int(self.config.get("offline_grace_seconds", 60))
         self._sync_thread = None
+        self._db = None
+        self.verify_delays = [int(x) for x in self.config.get("verify_delays", [6, 15])]
         
         if self.enabled and self.api_key and self.api_secret and tinytuya:
             try:
@@ -134,13 +136,45 @@ class TuyaCloudBridge:
                             return
 
                 if res and res.get("success"):
-                    print(f"[TuyaBridge] ✅ Berhasil kontrol lampu fisik '{device_id}' ({tuya_dev_id})")
+                    print(f"[TuyaBridge] 📨 Perintah diterima Tuya Cloud untuk '{device_id}' ({tuya_dev_id}), cek respons lampu...")
+                    if "state" in updates:
+                        want = "on" if (str(updates["state"]).lower() in ["on", "true", "1", "nyalakan", "buka"]) else "off"
+                        self._verify_state(device_id, tuya_dev_id, want)
                 else:
                     print(f"[TuyaBridge Warning] Respon Tuya Cloud: {res}")
             except Exception as e:
                 print(f"[TuyaBridge Error] Gagal kirim perintah ke Tuya: {e}")
 
         threading.Thread(target=_worker, daemon=True).start()
+
+    def _verify_state(self, device_id: str, tuya_dev_id: str, want: str) -> None:
+        """Pastikan perangkat fisik benar-benar berubah. Tuya Cloud menjawab 'success' begitu perintah
+        diteruskan ke gateway, walau lampu Bluetooth di luar jangkauan tidak pernah menerimanya."""
+        sent_at = self._last_command_at.get(tuya_dev_id, 0)
+        report = {}
+        for delay in self.verify_delays:
+            time.sleep(delay)
+            if self._last_command_at.get(tuya_dev_id, 0) != sent_at:
+                return  # ada perintah baru, biarkan pengecekan berikutnya yang menilai
+            try:
+                report = self._read_reports([tuya_dev_id]).get(tuya_dev_id) or {}
+            except Exception as e:
+                print(f"[TuyaBridge] Cek respons '{device_id}' gagal: {e}")
+                return
+            if report.get("state") == want and report.get("online") is not False:
+                print(f"[TuyaBridge] ✅ Lampu fisik '{device_id}' terkonfirmasi {want}")
+                if self._db:
+                    self._db.set_device_report(device_id, {"unresponsive": False, "online": True})
+                return
+        print(f"[TuyaBridge Warning] ⚠️ '{device_id}' tidak merespons (diminta {want}, dilaporkan "
+              f"{report.get('state', '?')}, online={report.get('online', '?')}) — mungkin di luar jangkauan gateway")
+        if self._db:
+            fields = {"unresponsive": True}
+            if report.get("state") in ("on", "off"):
+                fields["state"] = report["state"]
+            if "online" in report:
+                fields["online"] = report["online"]
+            self._db.set_device_report(device_id, fields)
 
     # ---------- Daftar perangkat akun Smart Life (untuk fitur Tambah Perangkat) ----------
     def _online_map(self, tuya_ids: List[str]) -> Dict[str, dict]:
@@ -231,6 +265,7 @@ class TuyaCloudBridge:
 
     def start_sync(self, db) -> None:
         """Polling ringan: tiap 15 detik saat ada yang membuka aplikasi, tiap 5 menit saat tidak ada."""
+        self._db = db
         if not self.enabled or not self.cloud or self._sync_thread:
             return
 

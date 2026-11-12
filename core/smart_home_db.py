@@ -396,7 +396,7 @@ class SmartHomeRealtimeDB:
             changes = {k: v for k, v in fields.items() if device.get(k) != v}
             if not changes:
                 return
-            if set(changes) == {"online"}:
+            if set(changes) <= {"online", "unresponsive"}:
                 device.update(changes)
                 self._save_db_unlocked()
                 self._broadcast_device(device)
