@@ -161,6 +161,12 @@ class TuyaCloudBridge:
             except Exception as e:
                 print(f"[TuyaBridge] Cek respons '{device_id}' gagal: {e}")
                 return
+            if report.get("online") is not False and "state" not in report:
+                # Tuya tidak melaporkan nyala/mati perangkat ini (umum untuk lampu Bluetooth lewat gateway);
+                # tidak bisa dinilai, jadi jangan tandai tidak merespons.
+                if self._db:
+                    self._db.set_device_report(device_id, {"unresponsive": False})
+                return
             if report.get("state") == want and report.get("online") is not False:
                 print(f"[TuyaBridge] ✅ Lampu fisik '{device_id}' terkonfirmasi {want}")
                 if self._db:
