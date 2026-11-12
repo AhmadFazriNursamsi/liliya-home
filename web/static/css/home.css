@@ -811,6 +811,10 @@ body.modal-open { overflow: hidden; }
 .talk-btn span:empty { display: none; }
 .talk-btn.rec { background: var(--red); animation: talk-pulse 1.2s ease-in-out infinite; }
 .talk-btn.busy { background: var(--peach-strong); }
+/* Tombol panggilan dua arah, di atas tombol bicara */
+.call-btn { bottom: 116px; }
+.call-btn.on { background: #2e9d5b; }
+.call-btn.on.busy { background: var(--peach-strong); }
 @keyframes talk-pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(214, 69, 69, 0.55); } 50% { box-shadow: 0 0 0 12px rgba(214, 69, 69, 0); } }
 @media (prefers-reduced-motion: reduce) { .talk-btn.rec { animation: none; } }
 .ctl-error { display: flex; align-items: center; gap: 10px; padding: 8px 0 2px; font-size: 0.8rem; color: var(--text-muted); }

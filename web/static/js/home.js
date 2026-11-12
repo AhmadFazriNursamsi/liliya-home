@@ -1031,10 +1031,13 @@ const BudiHome = (() => {
         let talk = null;        // sesi rekaman yang sedang berjalan
         let talkSending = false;
 
+        const callBtn = document.getElementById('btn-cctv-call');
         function updateTalk() {
-            talkBtn.hidden = !(mode === 'live' && ctrl && !ctrl.error && ctrl.talk && !ctrl.privacy);
-            if (talkBtn.hidden && talk) talk.stop(false);
-            if (talkBtn.hidden && live) live.close();
+            const can = !!(mode === 'live' && ctrl && !ctrl.error && ctrl.talk && !ctrl.privacy);
+            talkBtn.hidden = !can || !!(live && live.call);
+            callBtn.hidden = !can || !(live && live.supported());
+            if (!can && talk) talk.stop(false);
+            if (!can && live) live.close();
         }
 
         // ---------- Bicara langsung (realtime) lewat WebSocket ----------
@@ -1045,13 +1048,22 @@ const BudiHome = (() => {
         const TAP_MS = 350;
         var live = {   // var: updateTalk() bisa terpanggil sebelum baris ini dijalankan
             ws: null, camId: null, ready: false, sending: false, locked: false, pressAt: 0,
-            mic: null, idle: null, tick: null, since: 0,
+            mic: null, idle: null, tick: null, since: 0, call: false, prevSound: false, voiceAt: 0,
             supported() {
                 return !!((window.BudiAndroid && BudiAndroid.startTalkStream) ||
                     (window.isSecureContext && navigator.mediaDevices?.getUserMedia && (window.AudioContext || window.webkitAudioContext)));
             },
             ui() {
                 clearInterval(this.tick); this.tick = null;
+                if (this.call) {
+                    talkUi('', '');
+                    if (!this.ready) return setBtnUi(callBtn, 'busy', 'Menghubungkan…');
+                    const label = () => 'Panggilan ' + fmtOffset((Date.now() - this.since) / 1000);
+                    setBtnUi(callBtn, '', label());
+                    this.tick = setInterval(() => setBtnUi(callBtn, '', label()), 500);
+                    return;
+                }
+                setBtnUi(callBtn, '', '');
                 if (!this.ws) return talkUi('', '');
                 if (!this.ready) return talkUi('busy', this.sending ? 'Menghubungkan…' : '');
                 if (!this.sending) return talkUi('', '');
@@ -1077,13 +1089,52 @@ const BudiHome = (() => {
             },
             close() {
                 const ws = this.ws;
+                const wasCall = this.call;
+                this.call = false;
                 this.ws = null; this.ready = false; this.sending = false; this.locked = false;
+                if (wasCall) {
+                    if (window.BudiAndroid && BudiAndroid.setCallMode) BudiAndroid.setCallMode(false);
+                    const v = liveEl && liveEl.video;
+                    if (v) v.volume = 1;
+                    soundOn = this.prevSound; applySound();
+                    callBtn.classList.remove('on');
+                }
                 clearTimeout(this.idle); this.idle = null;
                 this.stopMic();
                 if (ws) { try { ws.close(); } catch (e) {} }
                 this.ui();
+                if (wasCall) updateTalk();
+            },
+            startCall() {
+                if (!cam || this.call) return;
+                if (this.ws) this.close();
+                this.prevSound = soundOn;
+                this.call = true;
+                this.open();
+                this.locked = true; this.sending = true; this.since = Date.now(); this.voiceAt = 0;
+                soundOn = true; applySound();
+                if (window.BudiAndroid && BudiAndroid.setCallMode) BudiAndroid.setCallMode(true);
+                this.startMic();
+                callBtn.classList.add('on');
+                if (navigator.vibrate) navigator.vibrate(30);
+                updateTalk();
+                this.ui();
+            },
+            // Saat Anda bicara, suara kamera di HP dikecilkan sebentar agar tidak kembali ke mic (gema/denging)
+            duck(buf) {
+                if (!this.call) return;
+                const a = new Int16Array(buf);
+                let sum = 0;
+                for (let i = 0; i < a.length; i++) sum += a[i] * a[i];
+                const rms = Math.sqrt(sum / Math.max(1, a.length)) / 32768;
+                const now = Date.now();
+                if (rms > 0.04) this.voiceAt = now;
+                const v = liveEl && liveEl.video;
+                const target = now - this.voiceAt < 700 ? 0.25 : 1;
+                if (v && v.volume !== target) v.volume = target;
             },
             send(buf) {
+                this.duck(buf);
                 if (this.sending && this.ready && this.ws && this.ws.readyState === 1) this.ws.send(buf);
             },
             async startMic() {
@@ -1161,11 +1212,12 @@ const BudiHome = (() => {
             live.send(buf.buffer);
         };
 
-        function talkUi(state, text) {
-            talkBtn.classList.toggle('rec', state === 'rec');
-            talkBtn.classList.toggle('busy', state === 'busy');
-            talkBtn.querySelector('span').textContent = text || '';
+        function setBtnUi(btn, state, text) {
+            btn.classList.toggle('rec', state === 'rec');
+            btn.classList.toggle('busy', state === 'busy');
+            btn.querySelector('span').textContent = text || '';
         }
+        function talkUi(state, text) { setBtnUi(talkBtn, state, text); }
 
         async function sendTalk(blob) {
             if (!cam) return;
@@ -1245,11 +1297,15 @@ const BudiHome = (() => {
             },
             error: msg => {
                 if (talk) talk.finish();
-                if (live.mic) { live.mic = null; live.sending = false; live.locked = false; live.ui(); }
+                if (live.call) live.close();
+                else if (live.mic) { live.mic = null; live.sending = false; live.locked = false; live.ui(); }
                 toast(msg);
             }
         };
 
+        callBtn.addEventListener('click', () => { if (live.call) live.close(); else live.startCall(); });
+        // Aplikasi ditinggalkan (layar mati / pindah aplikasi): tutup panggilan, mikrofon sudah dilepas Android
+        document.addEventListener('visibilitychange', () => { if (document.hidden && live.call) live.close(); });
         talkBtn.addEventListener('pointerdown', e => {
             e.preventDefault();
             try { talkBtn.setPointerCapture(e.pointerId); } catch (err) {}   // jari bergeser keluar tombol tetap terhitung

@@ -12,9 +12,12 @@ import android.content.pm.ActivityInfo;
 import android.content.pm.PackageManager;
 import android.content.res.Configuration;
 import android.graphics.Color;
+import android.media.AudioDeviceInfo;
 import android.media.AudioFormat;
+import android.media.AudioManager;
 import android.media.AudioRecord;
 import android.media.MediaRecorder;
+import android.media.audiofx.AcousticEchoCanceler;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
@@ -78,6 +81,7 @@ public class MainActivity extends Activity {
     private SpeechRecognizer recognizer;
     private MediaRecorder talkRecorder;   // "tahan untuk bicara" ke speaker CCTV
     private File talkFile;
+    private boolean callMode;   // panggilan dua arah CCTV: audio dalam mode komunikasi
     private volatile Object talkStreamId;   // bicara langsung: sesi perekam aktif (null = berhenti)
     private PermissionRequest pendingWebPermission;
     private boolean pendingSpeechStart;
@@ -676,7 +680,12 @@ public class MainActivity extends Activity {
         talkStreamId = id;
         new Thread(() -> {
             byte[] buf = new byte[1280];   // 40 ms
+            AcousticEchoCanceler aec = null;
             try {
+                if (AcousticEchoCanceler.isAvailable()) {
+                    aec = AcousticEchoCanceler.create(rec.getAudioSessionId());
+                    if (aec != null) aec.setEnabled(true);
+                }
                 rec.startRecording();
                 while (talkStreamId == id) {
                     int n = rec.read(buf, 0, buf.length);
@@ -687,10 +696,37 @@ public class MainActivity extends Activity {
             } catch (Exception e) {
                 jsTalk("error", "Mikrofon berhenti: " + e.getMessage());
             } finally {
+                if (aec != null) aec.release();
                 try { rec.stop(); } catch (Exception ignored) { }
                 rec.release();
             }
         }, "talk-stream").start();
+    }
+
+    /** Mode panggilan: peredam gema perangkat aktif, suara lewat speaker (kecuali headset terpasang). */
+    private void setCallMode(boolean on) {
+        AudioManager am = (AudioManager) getSystemService(AUDIO_SERVICE);
+        if (am == null || on == callMode) return;
+        callMode = on;
+        try {
+            if (on) {
+                am.setMode(AudioManager.MODE_IN_COMMUNICATION);
+                if (Build.VERSION.SDK_INT >= 31) {
+                    AudioDeviceInfo cur = am.getCommunicationDevice();
+                    if (cur == null || cur.getType() == AudioDeviceInfo.TYPE_BUILTIN_EARPIECE) {
+                        for (AudioDeviceInfo d : am.getAvailableCommunicationDevices()) {
+                            if (d.getType() == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER) { am.setCommunicationDevice(d); break; }
+                        }
+                    }
+                } else if (!am.isWiredHeadsetOn() && !am.isBluetoothScoOn()) {
+                    am.setSpeakerphoneOn(true);
+                }
+            } else {
+                if (Build.VERSION.SDK_INT >= 31) am.clearCommunicationDevice();
+                else am.setSpeakerphoneOn(false);
+                am.setMode(AudioManager.MODE_NORMAL);
+            }
+        } catch (Exception ignored) { }
     }
 
     private void stopTalkStream() {
@@ -746,6 +782,9 @@ public class MainActivity extends Activity {
         public void stopTalkStream() { MainActivity.this.stopTalkStream(); }
 
         @JavascriptInterface
+        public void setCallMode(boolean on) { runOnUiThread(() -> MainActivity.this.setCallMode(on)); }
+
+        @JavascriptInterface
         public void openSettings() { runOnUiThread(MainActivity.this::showSettings); }
 
         @JavascriptInterface
@@ -781,6 +820,7 @@ public class MainActivity extends Activity {
         CookieManager.getInstance().flush();
         stopTalk(false);
         stopTalkStream();
+        setCallMode(false);
         webView.onPause();
     }
 
@@ -801,6 +841,7 @@ public class MainActivity extends Activity {
         if (recognizer != null) recognizer.destroy();
         releaseTalk();
         stopTalkStream();
+        setCallMode(false);
         webView.destroy();
         super.onDestroy();
     }
