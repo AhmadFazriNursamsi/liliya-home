@@ -86,10 +86,27 @@ class WebAuth:
             return True
         return self._valid_token(request.cookies.get(COOKIE_NAME, ""))
 
+    @staticmethod
+    def _same_origin(request) -> bool:
+        """Tolak permintaan lintas-situs: Origin (jika ada) harus sama dengan Host.
+        Klien non-browser (tanpa Origin, mis. APK/ESP32/curl) tetap lolos."""
+        from urllib.parse import urlsplit
+        origin = request.headers.get("Origin")
+        if not origin:
+            return request.headers.get("Sec-Fetch-Site", "same-origin") in ("same-origin", "none", "same-site")
+        if origin == "null":
+            return False
+        return urlsplit(origin).netloc.lower() == request.headers.get("Host", "").lower()
+
     # ---------- Middleware ----------
     @web.middleware
     async def middleware(self, request, handler):
         path = request.path
+        if self.enabled and request.method in ("POST", "PUT", "PATCH", "DELETE") \
+                and not path.startswith(PUBLIC_PATHS) and not self._same_origin(request):
+            return web.json_response({"error": "Forbidden (origin)"}, status=403)
+        if self.enabled and path in ("/ws", "/cctv/live/api/ws") and not self._same_origin(request):
+            return web.json_response({"error": "Forbidden (origin)"}, status=403)
         if not self.enabled or path.startswith(PUBLIC_PATHS) or self.is_authenticated(request):
             return await handler(request)
         if path.startswith("/api/") or path == "/ws" or path.startswith("/cctv/"):
@@ -141,6 +158,7 @@ class WebAuth:
     @staticmethod
     def _safe_next(nxt) -> str:
         nxt = str(nxt or "/")
-        if not nxt.startswith("/") or nxt.startswith("//") or nxt.startswith("/login"):
+        if (not nxt.startswith("/") or nxt.startswith("//") or nxt.startswith("/login")
+                or "\\" in nxt or any(ord(c) < 32 for c in nxt)):
             return "/"
         return nxt

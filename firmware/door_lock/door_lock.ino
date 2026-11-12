@@ -42,11 +42,7 @@ unsigned long doorChangedAt = 0, lastReminder = 0;
 
 // Kartu yang dikenal: tempel UID dari Serial Monitor ke sini
 struct Card { const char *uid; const char *name; };
-Card known[] = {
-  {"00 00 00 01", "Fazri"},  // kartu putih
-  {"00 00 00 02", "Lili"},   // gantungan kunci
-  {"00 00 00 03", "Liya"},   // kartu Jakarta Tourist
-};
+Card known[] = { KNOWN_CARDS_INIT };   // isi di secrets.h (tidak ikut di-commit)
 const int KNOWN_COUNT = sizeof(known) / sizeof(known[0]);
 
 String uidToString(const MFRC522::Uid &u) {

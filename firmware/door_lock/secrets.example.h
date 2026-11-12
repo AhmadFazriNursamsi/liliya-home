@@ -5,3 +5,7 @@
 #define WIFI_PASS    "ISI_PASSWORD_WIFI"
 #define LILIYA_URL   "http://192.168.1.5:8080"
 #define DEVICE_TOKEN "ISI_TOKEN_DARI_SERVER"
+// Kartu RFID yang dikenal: {"UID", "Nama"}. Lihat UID di Serial Monitor.
+#define KNOWN_CARDS_INIT \
+  {"AA BB CC DD", "Pemilik1"}, \
+  {"11 22 33 44", "Pemilik2"}
