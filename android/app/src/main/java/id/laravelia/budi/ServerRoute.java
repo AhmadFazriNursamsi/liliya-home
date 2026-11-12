@@ -50,6 +50,8 @@ final class ServerRoute {
             c.setReadTimeout(1500);
             c.setInstanceFollowRedirects(false);
             if (c.getResponseCode() != 200) return false;
+            // Server Liliya asli menyertakan header ini; server lain di LAN tidak
+            if (!"1".equals(c.getHeaderField("X-Liliya-Hub"))) return false;
             // Pastikan benar-benar server Liliya, bukan perangkat lain yang kebetulan memakai IP sama
             byte[] buf = new byte[2048];
             try (InputStream in = c.getInputStream()) {

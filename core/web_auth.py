@@ -101,6 +101,14 @@ class WebAuth:
     # ---------- Middleware ----------
     @web.middleware
     async def middleware(self, request, handler):
+        resp = await self._middleware(request, handler)
+        try:
+            resp.headers["X-Liliya-Hub"] = "1"
+        except Exception:
+            pass
+        return resp
+
+    async def _middleware(self, request, handler):
         path = request.path
         if self.enabled and request.method in ("POST", "PUT", "PATCH", "DELETE") \
                 and not path.startswith(PUBLIC_PATHS) and not self._same_origin(request):

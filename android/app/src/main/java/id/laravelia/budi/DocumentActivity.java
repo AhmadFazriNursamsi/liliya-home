@@ -110,6 +110,8 @@ public class DocumentActivity extends Activity {
                     : intent.getParcelableExtra(Intent.EXTRA_STREAM);
         }
         if (uri == null) return false;
+        // Hanya content:// (SAF/penyedia berkas). file:// bisa menunjuk data privat aplikasi ini.
+        if (!"content".equals(uri.getScheme())) return false;
         docUri = uri;
         docMime = intent.getType();
         if (docMime == null || docMime.contains("*")) {
