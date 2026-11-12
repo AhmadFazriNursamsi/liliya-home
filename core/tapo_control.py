@@ -12,6 +12,8 @@ mengunci login ±30 menit, jadi setelah gagal kita berhenti mencoba sampai waktu
 import asyncio
 import os
 import re
+import secrets
+import struct
 import tempfile
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -31,6 +33,16 @@ TALK_MAX_SECONDS = 30
 TALK_MAX_BYTES = 1_000_000
 # Jeda awal agar suku kata pertama tidak terpotong, buang dengung rendah, ratakan volume suara
 TALK_FILTER = "adelay=300,highpass=f=200,lowpass=f=3400,dynaudnorm=f=150:g=15,alimiter=limit=0.95"
+
+# Bicara langsung (realtime): HP mengirim PCM 16-bit mono 16 kHz lewat WebSocket, go2rtc mengambilnya
+# dari hub sebagai aliran WAV tanpa ujung dan meneruskannya ke speaker kamera.
+LIVE_RATE = 16000
+LIVE_FRAME = 640                 # 20 ms
+LIVE_QUEUE_FRAMES = 25           # maks ±0,5 dtk antrean; lebih dari itu potongan lama dibuang agar jeda tidak menumpuk
+LIVE_MAX_SECONDS = 15 * 60
+LIVE_WAV_HEADER = (b"RIFF" + struct.pack("<I", 0xFFFFFFFF) + b"WAVEfmt "
+                   + struct.pack("<IHHIIHH", 16, 1, 1, LIVE_RATE, LIVE_RATE * 2, 2, 16)
+                   + b"data" + struct.pack("<I", 0xFFFFFFFF))
 
 
 class TapoCamera:
@@ -144,6 +156,8 @@ class TapoControlManager:
         self._executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="tapo")
         self.go2rtc_url = (cfg.get("go2rtc_url") or "http://127.0.0.1:1984").rstrip("/")
         self._talk_locks = {}
+        self._live_feeds = {}     # token -> asyncio.Queue berisi PCM dari HP
+        self._live_owner = {}     # cam_id -> token sesi bicara langsung yang aktif
         self._talk_dir = os.path.join(tempfile.gettempdir(), "budi-talk")
         if self.cameras:
             print(f"[Tapo] 🎛️ Kontrol kamera aktif: {', '.join(self.cameras)}")
@@ -154,6 +168,8 @@ class TapoControlManager:
         app.router.add_get("/api/cctv/{cam}/controls", self.handle_get)
         app.router.add_put("/api/cctv/{cam}/controls", self.handle_put)
         app.router.add_post("/api/cctv/{cam}/talk", self.handle_talk)
+        app.router.add_get("/api/cctv/{cam}/talk/live", self.handle_talk_live)
+        app.router.add_get("/api/cctv-feed/{token}", self.handle_live_feed)
 
     def _camera(self, request) -> tuple:
         cam_id = request.match_info.get("cam", "")
@@ -256,3 +272,93 @@ class TapoControlManager:
                     except OSError:
                         pass
         return web.json_response({"status": "ok", "seconds": round(seconds, 1)})
+
+    # ---------- Bicara langsung (realtime) ----------
+    async def handle_talk_live(self, request):
+        """WebSocket: frame biner = PCM s16le mono 16 kHz. Server mengirim {type: connecting|ready|error}."""
+        cam_id, cam = self._camera(request)
+        ws = web.WebSocketResponse(heartbeat=20, max_msg_size=64 * 1024)
+        await ws.prepare(request)
+        if cam_id in self._live_owner or (self._talk_locks.get(cam_id) and self._talk_locks[cam_id].locked()):
+            await ws.send_json({"type": "error", "message": "Speaker kamera sedang dipakai perangkat lain."})
+            await ws.close()
+            return ws
+
+        token = secrets.token_urlsafe(32)
+        queue = asyncio.Queue(maxsize=LIVE_QUEUE_FRAMES * 2)
+        self._live_feeds[token] = queue
+        self._live_owner[cam_id] = token
+        port = (request.transport.get_extra_info("sockname") or ("", 8080))[1]
+        started = time.time()
+        frames = 0
+
+        async def connect():
+            try:
+                await ws.send_json({"type": "connecting"})
+                name = await self._talk_stream(cam_id, cam)
+                status, body = await self._go2rtc(
+                    "POST", dst=name, src=f"ffmpeg:http://127.0.0.1:{port}/api/cctv-feed/{token}#audio=pcma")
+                if status != 200 or '"format_name":"tapo"' not in body:
+                    raise TapoError("Kamera tidak menerima suara. Pastikan mode privasi mati.")
+                print(f"[Tapo] {cam_id}: 🎙️ bicara langsung tersambung ({time.time() - started:.1f} dtk)")
+                await ws.send_json({"type": "ready"})
+            except TapoError as e:
+                await ws.send_json({"type": "error", "message": str(e)})
+                await ws.close()
+            except (aiohttp.ClientError, asyncio.TimeoutError):
+                await ws.send_json({"type": "error", "message": "go2rtc tidak merespon."})
+                await ws.close()
+            except ConnectionResetError:
+                pass
+
+        task = asyncio.create_task(connect())
+        try:
+            async for msg in ws:
+                if time.time() - started > LIVE_MAX_SECONDS:
+                    break
+                if msg.type != aiohttp.WSMsgType.BINARY or not msg.data or len(msg.data) % 2:
+                    continue
+                if queue.full():
+                    try:
+                        queue.get_nowait()   # buang yang paling lama: jeda tetap pendek walau sinyal tersendat
+                    except asyncio.QueueEmpty:
+                        pass
+                queue.put_nowait(msg.data)
+                frames += 1
+        finally:
+            task.cancel()
+            self._live_feeds.pop(token, None)
+            if self._live_owner.get(cam_id) == token:
+                self._live_owner.pop(cam_id, None)
+            try:
+                queue.put_nowait(None)
+            except asyncio.QueueFull:
+                pass
+            print(f"[Tapo] {cam_id}: 🎙️ bicara langsung selesai ({time.time() - started:.0f} dtk, {frames} potongan)")
+        return ws
+
+    async def handle_live_feed(self, request):
+        """Aliran WAV untuk ffmpeg milik go2rtc. Hanya dari STB sendiri, dengan token sesi yang masih aktif."""
+        if request.remote not in ("127.0.0.1", "::1") or any(
+                h in request.headers for h in ("Cf-Connecting-Ip", "X-Forwarded-For", "Origin")):
+            raise web.HTTPNotFound()
+        token = request.match_info.get("token", "")
+        queue = self._live_feeds.get(token)
+        if queue is None:
+            raise web.HTTPNotFound()
+        resp = web.StreamResponse(headers={"Content-Type": "audio/wav", "Cache-Control": "no-store"})
+        await resp.prepare(request)
+        await resp.write(LIVE_WAV_HEADER)
+        silence = b"\0" * (LIVE_FRAME * 5)
+        try:
+            while token in self._live_feeds:
+                try:
+                    chunk = await asyncio.wait_for(queue.get(), 0.1)
+                except asyncio.TimeoutError:
+                    chunk = silence   # tidak sedang bicara: isi hening agar sambungan ke kamera tetap hidup
+                if chunk is None:
+                    break
+                await resp.write(chunk)
+        except (ConnectionResetError, asyncio.CancelledError):
+            pass
+        return resp

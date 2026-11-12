@@ -12,6 +12,8 @@ import android.content.pm.ActivityInfo;
 import android.content.pm.PackageManager;
 import android.content.res.Configuration;
 import android.graphics.Color;
+import android.media.AudioFormat;
+import android.media.AudioRecord;
 import android.media.MediaRecorder;
 import android.net.Uri;
 import android.os.Build;
@@ -76,6 +78,7 @@ public class MainActivity extends Activity {
     private SpeechRecognizer recognizer;
     private MediaRecorder talkRecorder;   // "tahan untuk bicara" ke speaker CCTV
     private File talkFile;
+    private volatile Object talkStreamId;   // bicara langsung: sesi perekam aktif (null = berhenti)
     private PermissionRequest pendingWebPermission;
     private boolean pendingSpeechStart;
     private String activeBase;   // alamat server yang sedang dimuat (WiFi rumah atau Cloudflare)
@@ -645,6 +648,55 @@ public class MainActivity extends Activity {
         if (talkFile != null) talkFile.delete();
     }
 
+    /** Bicara langsung: rekam PCM 16 kHz mono dan kirim tiap 40 ms ke halaman (window.BudiTalkFeed). */
+    private void startTalkStream() {
+        if (!hasMicPermission()) {
+            requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO}, REQ_MIC);
+            jsTalk("error", "Izinkan mikrofon, lalu tekan tombol bicara lagi.");
+            return;
+        }
+        stopTalkStream();
+        final int rate = 16000;
+        int min = AudioRecord.getMinBufferSize(rate, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT);
+        final AudioRecord rec;
+        try {
+            // VOICE_COMMUNICATION: peredam gema & bising bawaan HP
+            rec = new AudioRecord(MediaRecorder.AudioSource.VOICE_COMMUNICATION, rate,
+                    AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, Math.max(min, 6400));
+        } catch (Exception e) {
+            jsTalk("error", "Mikrofon tidak bisa dipakai: " + e.getMessage());
+            return;
+        }
+        if (rec.getState() != AudioRecord.STATE_INITIALIZED) {
+            rec.release();
+            jsTalk("error", "Mikrofon sedang dipakai aplikasi lain.");
+            return;
+        }
+        final Object id = new Object();
+        talkStreamId = id;
+        new Thread(() -> {
+            byte[] buf = new byte[1280];   // 40 ms
+            try {
+                rec.startRecording();
+                while (talkStreamId == id) {
+                    int n = rec.read(buf, 0, buf.length);
+                    if (n <= 0) continue;
+                    String b64 = Base64.encodeToString(buf, 0, n, Base64.NO_WRAP);
+                    runOnUiThread(() -> webView.evaluateJavascript("window.BudiTalkFeed && BudiTalkFeed('" + b64 + "')", null));
+                }
+            } catch (Exception e) {
+                jsTalk("error", "Mikrofon berhenti: " + e.getMessage());
+            } finally {
+                try { rec.stop(); } catch (Exception ignored) { }
+                rec.release();
+            }
+        }, "talk-stream").start();
+    }
+
+    private void stopTalkStream() {
+        talkStreamId = null;   // thread perekam berhenti dan melepas mikrofon sendiri
+    }
+
     private void jsTalk(String fn, String arg) {
         String js = "window.budiNativeTalk && window.budiNativeTalk." + fn + "(" + JSONObject.quote(arg) + ")";
         runOnUiThread(() -> webView.evaluateJavascript(js, null));
@@ -688,6 +740,12 @@ public class MainActivity extends Activity {
         public void stopTalk(boolean send) { runOnUiThread(() -> MainActivity.this.stopTalk(send)); }
 
         @JavascriptInterface
+        public void startTalkStream() { runOnUiThread(MainActivity.this::startTalkStream); }
+
+        @JavascriptInterface
+        public void stopTalkStream() { MainActivity.this.stopTalkStream(); }
+
+        @JavascriptInterface
         public void openSettings() { runOnUiThread(MainActivity.this::showSettings); }
 
         @JavascriptInterface
@@ -722,6 +780,7 @@ public class MainActivity extends Activity {
         super.onPause();
         CookieManager.getInstance().flush();
         stopTalk(false);
+        stopTalkStream();
         webView.onPause();
     }
 
@@ -741,6 +800,7 @@ public class MainActivity extends Activity {
     protected void onDestroy() {
         if (recognizer != null) recognizer.destroy();
         releaseTalk();
+        stopTalkStream();
         webView.destroy();
         super.onDestroy();
     }

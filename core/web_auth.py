@@ -11,7 +11,7 @@ from aiohttp import web
 COOKIE_NAME = "budi_session"
 # /push/snap/: gambar notifikasi FCM, diakses lewat URL acak sekali pakai (lihat core/push.py)
 # /api/voice-worker/: pekerja suara GPU, diperiksa sendiri dengan token khusus (lihat core/remote_tts.py)
-PUBLIC_PATHS = ("/login", "/logout", "/static/", "/favicon.ico", "/push/snap/", "/api/voice-worker/", "/api/door-device/")
+PUBLIC_PATHS = ("/login", "/logout", "/static/", "/favicon.ico", "/push/snap/", "/api/voice-worker/", "/api/door-device/", "/api/cctv-feed/")
 def _redirect(location: str) -> web.Response:
     return web.Response(status=302, headers={"Location": location, "Cache-Control": "no-store"})
 
@@ -113,7 +113,8 @@ class WebAuth:
         if self.enabled and request.method in ("POST", "PUT", "PATCH", "DELETE") \
                 and not path.startswith(PUBLIC_PATHS) and not self._same_origin(request):
             return web.json_response({"error": "Forbidden (origin)"}, status=403)
-        if self.enabled and path in ("/ws", "/cctv/live/api/ws") and not self._same_origin(request):
+        if self.enabled and (path in ("/ws", "/cctv/live/api/ws") or path.endswith("/talk/live")) \
+                and not self._same_origin(request):
             return web.json_response({"error": "Forbidden (origin)"}, status=403)
         if not self.enabled or path.startswith(PUBLIC_PATHS) or self.is_authenticated(request):
             return await handler(request)

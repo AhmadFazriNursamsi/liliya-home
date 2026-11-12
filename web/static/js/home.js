@@ -1034,7 +1034,132 @@ const BudiHome = (() => {
         function updateTalk() {
             talkBtn.hidden = !(mode === 'live' && ctrl && !ctrl.error && ctrl.talk && !ctrl.privacy);
             if (talkBtn.hidden && talk) talk.stop(false);
+            if (talkBtn.hidden && live) live.close();
         }
+
+        // ---------- Bicara langsung (realtime) lewat WebSocket ----------
+        // Tahan tombol = bicara selama ditahan. Ketuk sekali = bicara terus sampai diketuk lagi.
+        // Sambungan ke kamera butuh beberapa detik, jadi dibiarkan terbuka selama tampilan live dibuka.
+        const LIVE_RATE = 16000;
+        const LIVE_IDLE_MS = 120000;
+        const TAP_MS = 350;
+        var live = {   // var: updateTalk() bisa terpanggil sebelum baris ini dijalankan
+            ws: null, camId: null, ready: false, sending: false, locked: false, pressAt: 0,
+            mic: null, idle: null, tick: null, since: 0,
+            supported() {
+                return !!((window.BudiAndroid && BudiAndroid.startTalkStream) ||
+                    (window.isSecureContext && navigator.mediaDevices?.getUserMedia && (window.AudioContext || window.webkitAudioContext)));
+            },
+            ui() {
+                clearInterval(this.tick); this.tick = null;
+                if (!this.ws) return talkUi('', '');
+                if (!this.ready) return talkUi('busy', this.sending ? 'Menghubungkan…' : '');
+                if (!this.sending) return talkUi('', '');
+                const label = () => (this.locked ? 'Bicara · ketuk untuk henti ' : '') + fmtOffset((Date.now() - this.since) / 1000);
+                talkUi('rec', label());
+                this.tick = setInterval(() => talkUi('rec', label()), 250);
+            },
+            open() {
+                if (this.ws && this.camId === cam.id) return;
+                this.close();
+                this.camId = cam.id;
+                const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+                const ws = new WebSocket(`${proto}//${location.host}/api/cctv/${encodeURIComponent(cam.id)}/talk/live`);
+                ws.binaryType = 'arraybuffer';
+                this.ws = ws; this.ready = false;
+                ws.onmessage = e => {
+                    let m; try { m = JSON.parse(e.data); } catch (err) { return; }
+                    if (ws !== this.ws) return;
+                    if (m.type === 'ready') { this.ready = true; this.since = Date.now(); if (this.sending && navigator.vibrate) navigator.vibrate(30); this.ui(); }
+                    else if (m.type === 'error') { toast(m.message || 'Bicara langsung gagal'); this.close(); }
+                };
+                ws.onclose = () => { if (ws === this.ws) { if (!this.ready && this.sending) toast('Sambungan suara ke kamera terputus'); this.close(); } };
+            },
+            close() {
+                const ws = this.ws;
+                this.ws = null; this.ready = false; this.sending = false; this.locked = false;
+                clearTimeout(this.idle); this.idle = null;
+                this.stopMic();
+                if (ws) { try { ws.close(); } catch (e) {} }
+                this.ui();
+            },
+            send(buf) {
+                if (this.sending && this.ready && this.ws && this.ws.readyState === 1) this.ws.send(buf);
+            },
+            async startMic() {
+                if (this.mic) return;
+                if (window.BudiAndroid && BudiAndroid.startTalkStream) {
+                    this.mic = { stop: () => BudiAndroid.stopTalkStream() };
+                    BudiAndroid.startTalkStream();
+                    return;
+                }
+                const mic = { stopped: false, stop() { this.stopped = true; } };
+                this.mic = mic;
+                let stream;
+                try {
+                    stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
+                } catch (e) {
+                    if (this.mic === mic) { this.mic = null; this.sending = false; this.locked = false; this.ui(); }
+                    toast('Izin mikrofon ditolak.');
+                    return;
+                }
+                const Ctx = window.AudioContext || window.webkitAudioContext;
+                const ctx = new Ctx();
+                const srcNode = ctx.createMediaStreamSource(stream);
+                const proc = ctx.createScriptProcessor(2048, 1, 1);
+                const ratio = ctx.sampleRate / LIVE_RATE;
+                proc.onaudioprocess = e => {
+                    const input = e.inputBuffer.getChannelData(0);
+                    const n = Math.floor(input.length / ratio);
+                    const out = new Int16Array(n);
+                    for (let i = 0; i < n; i++) {
+                        const a = Math.floor(i * ratio), b = Math.min(input.length, Math.floor((i + 1) * ratio));
+                        let sum = 0;
+                        for (let j = a; j < b; j++) sum += input[j];
+                        const v = Math.max(-1, Math.min(1, sum / Math.max(1, b - a)));
+                        out[i] = v < 0 ? v * 0x8000 : v * 0x7fff;
+                    }
+                    this.send(out.buffer);
+                };
+                srcNode.connect(proc);
+                proc.connect(ctx.destination);
+                const stopAll = () => { try { proc.disconnect(); srcNode.disconnect(); ctx.close(); } catch (e) {} stream.getTracks().forEach(t => t.stop()); };
+                if (mic.stopped) return stopAll();
+                mic.stop = stopAll;
+            },
+            stopMic() {
+                if (this.mic) { const m = this.mic; this.mic = null; m.stop(); }
+            },
+            press() {
+                if (!cam) return;
+                clearTimeout(this.idle); this.idle = null;
+                this.pressAt = Date.now();
+                if (this.locked) return;   // ketukan kedua saat mode terus: dihentikan di release()
+                this.open();
+                this.sending = true;
+                this.since = Date.now();
+                if (navigator.vibrate) navigator.vibrate(15);
+                this.startMic();
+                this.ui();
+            },
+            release() {
+                if (!this.ws) return;
+                const tap = Date.now() - this.pressAt < TAP_MS;
+                if (this.locked) { if (tap) this.locked = false; else return; }
+                else if (tap) { this.locked = true; this.ui(); return; }
+                this.sending = false;
+                this.stopMic();
+                this.ui();
+                this.idle = setTimeout(() => this.close(), LIVE_IDLE_MS);
+            }
+        };
+        // Dipanggil MainActivity: potongan PCM 16 kHz (base64) dari AudioRecord
+        window.BudiTalkFeed = b64 => {
+            const bin = atob(b64);
+            const buf = new Uint8Array(bin.length);
+            for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
+            live.send(buf.buffer);
+        };
 
         function talkUi(state, text) {
             talkBtn.classList.toggle('rec', state === 'rec');
@@ -1118,21 +1243,26 @@ const BudiHome = (() => {
                 for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
                 sendTalk(new Blob([buf], { type: mime }));
             },
-            error: msg => { if (talk) talk.finish(); toast(msg); }
+            error: msg => {
+                if (talk) talk.finish();
+                if (live.mic) { live.mic = null; live.sending = false; live.locked = false; live.ui(); }
+                toast(msg);
+            }
         };
 
         talkBtn.addEventListener('pointerdown', e => {
             e.preventDefault();
             try { talkBtn.setPointerCapture(e.pointerId); } catch (err) {}   // jari bergeser keluar tombol tetap terhitung
-            startTalk();
+            if (live.supported()) live.press(); else startTalk();
         });
-        talkBtn.addEventListener('pointerup', endTalk);
-        talkBtn.addEventListener('pointercancel', endTalk);
+        const talkUp = e => { if (live.ws) { e.preventDefault(); live.release(); } else endTalk(e); };
+        talkBtn.addEventListener('pointerup', talkUp);
+        talkBtn.addEventListener('pointercancel', talkUp);
         talkBtn.addEventListener('contextmenu', e => e.preventDefault());   // tahan lama di HP tidak memunculkan menu
         talkBtn.addEventListener('keydown', e => {
-            if ((e.key === 'Enter' || e.key === ' ') && !e.repeat) { e.preventDefault(); startTalk(); }
+            if ((e.key === 'Enter' || e.key === ' ') && !e.repeat) { e.preventDefault(); if (live.supported()) live.press(); else startTalk(); }
         });
-        talkBtn.addEventListener('keyup', e => { if (e.key === 'Enter' || e.key === ' ') endTalk(e); });
+        talkBtn.addEventListener('keyup', e => { if (e.key === 'Enter' || e.key === ' ') talkUp(e); });
 
         function selectCamera(id) {
             cam = cameras.find(c => c.id === id) || cameras[0];
