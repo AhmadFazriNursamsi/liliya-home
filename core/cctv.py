@@ -191,7 +191,12 @@ class CCTVManager:
                     m = re.search(r"Address>\s*([^<\s]+)", xml)
                     if not m:
                         raise RuntimeError("alamat PullPoint tidak ditemukan")
-                    address, renew_at = m.group(1), time.time() + 300
+                    cand = m.group(1)
+                    from urllib.parse import urlsplit
+                    if urlsplit(cand).hostname != urlsplit(onvif.url).hostname:
+                        # Kamera tidak boleh mengarahkan POST ke host lain (SSRF ke go2rtc dll.)
+                        cand = urlsplit(onvif.url)._replace(path=urlsplit(cand).path, query=urlsplit(cand).query).geturl()
+                    address, renew_at = cand, time.time() + 300
                     print(f"[CCTV] 👀 Deteksi gerakan '{cam_id}' aktif")
                 elif time.time() > renew_at:
                     await self._onvif_post(onvif, address,

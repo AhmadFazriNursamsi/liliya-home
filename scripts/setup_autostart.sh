@@ -5,6 +5,13 @@ echo "=========================================================="
 echo "🚀 Memasang Auto-Start Permanen STB Assistant & Cloudflare"
 echo "=========================================================="
 
+# Tunnel publik hanya boleh dipasang bila login web aktif
+CFG="$(dirname "$0")/../config.yaml"
+if ! awk '/^web_auth:/{f=1;next} /^[^ ]/{f=0} f&&/enabled:[ ]*true/{ok=1} f&&/password:[ ]*["\x27]?[^ "\x27]/{pw=1} END{exit !(ok&&pw)}' "$CFG" 2>/dev/null; then
+  echo "❌ web_auth belum aktif/berpassword di config.yaml. Tunnel publik tidak dipasang." >&2
+  exit 1
+fi
+
 CF_PATH=$(which cloudflared || echo "/usr/local/bin/cloudflared")
 
 # 1. Pastikan stb-assistant enabled

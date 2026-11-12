@@ -149,6 +149,8 @@ def _clean_aliases(value, name: str) -> List[str]:
     return aliases[:10]
 
 
+PROTECTED_DEVICE_KEYS = {"id", "tuya_id", "type", "local_key", "ip", "mac", "last_updated"}
+
 class SmartHomeRealtimeDB:
     def __init__(self, db_path="data/smart_home_db.json", web_server=None, firebase_bridge=None, tuya_bridge=None):
         self.base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -251,7 +253,9 @@ class SmartHomeRealtimeDB:
         with self.lock:
             if device_id in self.devices:
                 device = self.devices[device_id]
-                
+                # Field identitas/penargetan tidak boleh diubah lewat update status
+                updates = {k: v for k, v in updates.items() if k not in PROTECTED_DEVICE_KEYS}
+
                 # Cek apakah ada perubahan nyata (Deduplikasi untuk mencegah loop/echo)
                 has_changed = False
                 for k, v in updates.items():
