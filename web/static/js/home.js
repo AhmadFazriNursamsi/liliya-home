@@ -1073,7 +1073,7 @@ const BudiHome = (() => {
             },
             open() {
                 if (this.ws && this.camId === cam.id) return;
-                this.close();
+                if (this.ws) this.close();   // hanya bila ada sambungan lain; jangan sampai membatalkan panggilan yang baru dimulai
                 this.camId = cam.id;
                 const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
                 const ws = new WebSocket(`${proto}//${location.host}/api/cctv/${encodeURIComponent(cam.id)}/talk/live`);
