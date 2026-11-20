@@ -85,15 +85,29 @@ class TuyaCloudBridge:
                     print(f"[TuyaBridge] Gagal deteksi DP perangkat '{name}': {e}")
         threading.Thread(target=_detect, daemon=True).start()
 
-    def _send_local(self, tuya_dev_id: str, is_on: bool) -> bool:
-        """Kirim nyala/mati langsung ke gateway di LAN. Gateway tidak pernah membalas perintah,
+    def _local_dps(self, tuya_dev_id: str, updates: dict) -> dict:
+        """Ubah updates BUDI menjadi DP lokal: nyala/mati (DP 1) dan kecerahan (DP 3, 10-1000)."""
+        dev = self.local_devices.get(tuya_dev_id) or {}
+        dps = {}
+        if "state" in updates:
+            is_on = (str(updates["state"]).lower() in ["on", "true", "1", "nyalakan", "buka"])
+            dps[str(dev.get("switch_dp", 1))] = is_on
+        if "brightness" in updates and updates.get("state") != "off":
+            try:
+                val_pct = max(1, min(100, int(updates["brightness"])))
+                dps[str(dev.get("bright_dp", 3))] = max(10, val_pct * 10)
+            except Exception:
+                pass
+        return dps
+
+    def _send_local(self, tuya_dev_id: str, dps: dict) -> bool:
+        """Kirim DP langsung ke gateway di LAN. Gateway tidak pernah membalas perintah,
         jadi 'berhasil' berarti perintah terkirim tanpa gangguan koneksi. Koneksi ke gateway
         kadang putus-sambung, karena itu dicoba ulang beberapa kali."""
         dev = self.local_devices.get(tuya_dev_id)
         if not dev:
             return False
         gw_conf = self.local_gateway
-        dps = {str(dev.get("switch_dp", 1)): is_on}
         with self._local_lock:
             for attempt in range(1, self.local_retries + 1):
                 gw = None
@@ -121,7 +135,7 @@ class TuyaCloudBridge:
                             pass
         return False
 
-    def _repeat_local(self, tuya_dev_id: str, is_on: bool) -> None:
+    def _repeat_local(self, tuya_dev_id: str, dps: dict) -> None:
         """Kirim ulang untuk lampu yang sinyal Bluetooth-nya lemah (tuya_local.devices.<id>.repeat).
         Berhenti bila ada perintah baru untuk lampu yang sama."""
         dev = self.local_devices.get(tuya_dev_id) or {}
@@ -130,7 +144,7 @@ class TuyaCloudBridge:
             time.sleep(float(dev.get("repeat_gap", 2)))
             if self._last_command_at.get(tuya_dev_id, 0) != sent_at:
                 return
-            self._send_local(tuya_dev_id, is_on)
+            self._send_local(tuya_dev_id, dps)
 
     def push_device_update(self, device_id: str, updates: dict, tuya_id: Optional[str] = None):
         """Mengirim perintah perubahan state / brightness: lokal lewat gateway dulu, Tuya Cloud sebagai cadangan."""
@@ -156,20 +170,15 @@ class TuyaCloudBridge:
 
         def _worker():
             try:
-                # Nyala/mati: coba lokal dulu. Kecerahan tetap lewat cloud.
-                if "state" in updates and tuya_dev_id in self.local_devices:
-                    is_on = (str(updates["state"]).lower() in ["on", "true", "1", "nyalakan", "buka"])
-                    if self._send_local(tuya_dev_id, is_on):
+                # Nyala/mati dan kecerahan: coba lokal dulu, cloud hanya bila gateway tidak terjangkau
+                dps = self._local_dps(tuya_dev_id, updates) if tuya_dev_id in self.local_devices else {}
+                if dps:
+                    if self._send_local(tuya_dev_id, dps):
                         if self._db:
                             self._db.set_device_report(device_id, {"unresponsive": False})
-                        if "brightness" in updates and self.cloud:
-                            updates.pop("state")
-                            threading.Thread(target=self._repeat_local, args=(tuya_dev_id, is_on), daemon=True).start()
-                        else:
-                            self._repeat_local(tuya_dev_id, is_on)
-                            return
-                    else:
-                        print(f"[TuyaBridge] Gateway lokal tidak terjangkau, pakai Tuya Cloud untuk '{device_id}'")
+                        self._repeat_local(tuya_dev_id, dps)
+                        return
+                    print(f"[TuyaBridge] Gateway lokal tidak terjangkau, pakai Tuya Cloud untuk '{device_id}'")
                 if not self.cloud:
                     return
 

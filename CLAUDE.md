@@ -37,12 +37,12 @@ Hub rumah pintar berbahasa Indonesia yang berjalan di STB Armbian. Python aiohtt
   - Lampu Bluetooth ini memakai **DP 1** (`switch_led`), bukan DP 20. Cek pemetaan DP lewat cloud `/v2.0/cloud/thing/{id}/shadow/properties`.
   - Perintah dikirim sebagai CONTROL_NEW (cmd 13, `protocol:5`, `cid`=node_id). Gateway **tidak pernah membalas** perintah; `status()` sub-device ditolak.
   - Status nyala/mati di Tuya Cloud untuk lampu ini basi/salah, jadi `sync_now` mengabaikan state cloud untuk perangkat di `tuya_local`.
-- `core/tuya_bridge.py` sekarang: nyala/mati lewat gateway lokal dulu (coba ulang 3x, `tuya_local.retries`), Tuya Cloud sebagai cadangan. Kecerahan masih lewat cloud. `switch_dp` per perangkat bisa diatur di `tuya_local.devices`.
+- `core/tuya_bridge.py` sekarang: nyala/mati lewat gateway lokal dulu (coba ulang 3x, `tuya_local.retries`), Tuya Cloud sebagai cadangan. Kecerahan juga lokal: DP 3 `bright_value`, 10-1000 (persen x 10), sudah diuji di ruang tamu. `switch_dp`/`bright_dp` per perangkat bisa diatur di `tuya_local.devices`.
 - **Halaman depan sinyal Bluetooth-nya lemah**: Smart Life pun perlu ±3 klik. Di `config.yaml` diberi `repeat: 4`, `repeat_gap: 2` (kirim ulang, berhenti bila ada perintah baru). Backup: `config.yaml.bak-20261120-sebelum-repeat`. Solusi utama: user akan memindahkan gateway lebih dekat ke halaman depan.
 - Koneksi STB ke gateway 192.168.1.3 **putus-sambung** (ARP kadang gagal, broadcast UDP tetap terlihat). Perlu cek sinyal WiFi gateway.
 - **Langkah berikutnya:**
-  1. Kecerahan lewat cloud memakai `bright_value_v2`, padahal lampu HISTAR ini memakai `bright_value` (DP 3); perlu dicek.
-  2. Kecerahan lokal (DP 3 `bright_value`, rentang belum diketahui) supaya lepas total dari cloud.
+  1. Kendali lampu sudah lepas dari cloud. Cloud masih dipakai untuk cadangan, daftar perangkat (Tambah Perangkat), dan status online.
+  - Catatan: `bright_value_v2` di cloud BENAR (kode standar, diterjemahkan cloud ke DP 3).
 
 ### Ditunda (atas keputusan user)
 - Pindah penyimpanan perangkat dari `data/smart_home_db.json` ke **SQLite**. Rencananya tabel `devices`, `device_state`, `device_history`, dan `device_secrets` (kunci terpisah, tidak pernah dikirim ke web/Firebase). Kerjakan setelah kendali lokal Tuya berhasil.
