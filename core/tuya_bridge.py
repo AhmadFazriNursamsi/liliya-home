@@ -121,6 +121,17 @@ class TuyaCloudBridge:
                             pass
         return False
 
+    def _repeat_local(self, tuya_dev_id: str, is_on: bool) -> None:
+        """Kirim ulang untuk lampu yang sinyal Bluetooth-nya lemah (tuya_local.devices.<id>.repeat).
+        Berhenti bila ada perintah baru untuk lampu yang sama."""
+        dev = self.local_devices.get(tuya_dev_id) or {}
+        sent_at = self._last_command_at.get(tuya_dev_id, 0)
+        for _ in range(int(dev.get("repeat", 1)) - 1):
+            time.sleep(float(dev.get("repeat_gap", 2)))
+            if self._last_command_at.get(tuya_dev_id, 0) != sent_at:
+                return
+            self._send_local(tuya_dev_id, is_on)
+
     def push_device_update(self, device_id: str, updates: dict, tuya_id: Optional[str] = None):
         """Mengirim perintah perubahan state / brightness: lokal lewat gateway dulu, Tuya Cloud sebagai cadangan."""
         if not self.enabled or not (self.cloud or self.local_devices):
@@ -151,9 +162,12 @@ class TuyaCloudBridge:
                     if self._send_local(tuya_dev_id, is_on):
                         if self._db:
                             self._db.set_device_report(device_id, {"unresponsive": False})
-                        if "brightness" not in updates or not self.cloud:
+                        if "brightness" in updates and self.cloud:
+                            updates.pop("state")
+                            threading.Thread(target=self._repeat_local, args=(tuya_dev_id, is_on), daemon=True).start()
+                        else:
+                            self._repeat_local(tuya_dev_id, is_on)
                             return
-                        updates.pop("state")
                     else:
                         print(f"[TuyaBridge] Gateway lokal tidak terjangkau, pakai Tuya Cloud untuk '{device_id}'")
                 if not self.cloud:
