@@ -73,6 +73,18 @@ skills:
   default_volume: 80
   media_player: "mpv"
 
+weather:
+  # Cuaca rumah dari BMKG. adm4 = kode kelurahan/desa (Permendagri), cek di
+  # https://api.bmkg.go.id/publik/prakiraan-cuaca?adm4=<kode>. Contoh: Kemayoran, Jakarta Pusat.
+  adm4: "31.71.03.1001"
+  lat: -6.1647             # titik rumah, untuk mencocokkan area peringatan dini BMKG
+  lon: 106.8454
+  rain_alerts: true        # umumkan prakiraan hujan & peringatan dini (speaker + notifikasi HP)
+  lookahead_hours: 3       # umumkan hujan yang diperkirakan dalam N jam ke depan
+  check_interval: 900      # detik antar pengecekan
+  announce_start: "05:00"  # pengumuman suara hanya di jam ini; notifikasi HP tetap kapan saja
+  announce_end: "21:00"
+
 tuya:
   # Integrasi Tuya / BARDI Bluetooth Gateway & Smart Devices
   enabled: true

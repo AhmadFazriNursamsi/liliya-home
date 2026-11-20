@@ -190,7 +190,7 @@ def main():
     
     # 4. Inisialisasi Skills Lainnya
     media_player = MediaPlayerSkill(config)
-    weather = WeatherSkill(config)
+    weather = WeatherSkill(config, tts_engine=tts, media_player=media_player, web_server=web_server)
     timer = TimerAlarmSkill(tts_engine=tts)
     system_ctrl = SystemControlSkill(config)
     prayer_times = PrayerTimesSkill(config, tts_engine=tts, media_player=media_player)
@@ -223,6 +223,7 @@ def main():
     web_server.event_bridge = bridge
     media_player.set_event_bridge(bridge)
     prayer_times.set_event_bridge(bridge)
+    weather.set_event_bridge(bridge)
     bridge.set_web_server(web_server)
     gemini.set_web_server(web_server)
     
