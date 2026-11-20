@@ -103,9 +103,11 @@ class TuyaCloudBridge:
                     gw.set_socketTimeout(5)
                     gw.set_socketRetryLimit(1)
                     sub = tinytuya.Device(tuya_dev_id, cid=dev["node_id"], parent=gw)
-                    res = sub._send_receive(sub.generate_payload(tinytuya.CONTROL, dps))
+                    # Jangan tunggu balasan: gateway tidak pernah membalas, menunggu hanya menambah jeda 5 dtk
+                    res = sub._send_receive(sub.generate_payload(tinytuya.CONTROL, dps), getresponse=False)
                     if isinstance(res, dict) and res.get("Err"):
                         raise ConnectionError(res.get("Error") or res.get("Err"))
+                    time.sleep(0.3)  # beri waktu gateway membaca sebelum koneksi ditutup
                     print(f"[TuyaBridge] 🏠 Perintah lokal terkirim ke '{dev.get('name', tuya_dev_id)}': {dps}")
                     return True
                 except Exception as e:

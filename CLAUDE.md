@@ -32,14 +32,15 @@ Hub rumah pintar berbahasa Indonesia yang berjalan di STB Armbian. Python aiohtt
 ### Sedang berjalan: lepas dari Tuya Cloud (free tier habis ±Jan 2027)
 - **Titik kembali:** tag git `sebelum-tuya-lokal`, dan di STB `config.yaml.bak-20261112-153051` serta `config.yaml.bak-20261112-154550-sebelum-kunci`.
 - Gateway Bluetooth Tuya (wg2) ada di LAN 192.168.1.3, protokol 3.4. Kunci lokal gateway dan node_id 4 lampu **sudah disimpan** di `config.yaml` STB, bagian `tuya_local`.
-- **Kendali lokal BERHASIL (20 Nov 2026)**: ruang tamu terbukti mati/nyala dari STB tanpa cloud.
+- **Kendali lokal BERHASIL (20 Nov 2026)**: ruang tamu dan halaman depan terbukti mati/nyala dari STB tanpa cloud.
+  - Kirim **tanpa menunggu balasan** (`getresponse=False`). Bila menunggu, tiap perintah tertahan 5 dtk dan antre, sehingga lampu terlihat "tidak merespons".
   - Lampu Bluetooth ini memakai **DP 1** (`switch_led`), bukan DP 20. Cek pemetaan DP lewat cloud `/v2.0/cloud/thing/{id}/shadow/properties`.
   - Perintah dikirim sebagai CONTROL_NEW (cmd 13, `protocol:5`, `cid`=node_id). Gateway **tidak pernah membalas** perintah; `status()` sub-device ditolak.
   - Status nyala/mati di Tuya Cloud untuk lampu ini basi/salah, jadi `sync_now` mengabaikan state cloud untuk perangkat di `tuya_local`.
 - `core/tuya_bridge.py` sekarang: nyala/mati lewat gateway lokal dulu (coba ulang 3x, `tuya_local.retries`), Tuya Cloud sebagai cadangan. Kecerahan masih lewat cloud. `switch_dp` per perangkat bisa diatur di `tuya_local.devices`.
 - Koneksi STB ke gateway 192.168.1.3 **putus-sambung** (ARP kadang gagal, broadcast UDP tetap terlihat). Perlu cek sinyal WiFi gateway.
 - **Langkah berikutnya:**
-  1. Uji dari APK: ruang tamu, lalu **halaman depan** (dulu tidak merespons, mungkin jarak/hardware).
+  1. Kecerahan lewat cloud memakai `bright_value_v2`, padahal lampu HISTAR ini memakai `bright_value` (DP 3); perlu dicek.
   2. Kecerahan lokal (DP 3 `bright_value`, rentang belum diketahui) supaya lepas total dari cloud.
 
 ### Ditunda (atas keputusan user)
