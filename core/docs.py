@@ -5,6 +5,8 @@ Dokumen (Word, Excel, PowerPoint, OpenDocument, RTF, CSV, PDF) dikirim dari APK 
 LibreOffice tanpa GUI di STB, lalu ditampilkan dengan pdf.js (web/docs.html).
 Markdown, teks, dan kode tidak dikonversi: isinya dikirim apa adanya (/api/docs/{id}/text) dan
 ditampilkan langsung di penampil, supaya emoji dan huruf apa pun tampil seperti di HP.
+Arsip ZIP/RAR/7z (lewat lsar/unar dari paket "unar") ditampilkan sebagai daftar isi; file di dalamnya
+dikeluarkan satu per satu ke stdout (tidak pernah dibongkar ke disk) lalu dibuka sebagai dokumen baru.
 
 Penyimpanan: data/docs/<id>/{meta.json, source.<ext>, view.pdf}. File yang isinya sama (sha256)
 tidak dikonversi ulang. Dokumen yang tidak dibuka selama `retention_days` dihapus otomatis.
@@ -14,6 +16,7 @@ import asyncio
 import hashlib
 import json
 import mimetypes
+import subprocess
 import os
 import re
 import secrets
@@ -35,8 +38,12 @@ IMPRESS = {"ppt", "pptx", "pptm", "pps", "ppsx", "pot", "potx", "odp", "otp", "f
 MARKDOWN = {"md", "markdown", "mdown", "mkd"}
 TEXT = {"txt", "log", "json", "xml", "yaml", "yml", "ini", "conf", "cfg", "env", "srt", "vtt", "html", "htm",
         "py", "js", "ts", "java", "kt", "c", "cpp", "h", "cs", "php", "go", "rs", "sh", "bat", "sql", "css"}
-SUPPORTED = WRITER | CALC | IMPRESS | MARKDOWN | TEXT | {"pdf"}
-NO_CONVERT = MARKDOWN | TEXT | {"pdf"}
+ARCHIVE = {"zip", "rar", "7z"}
+SUPPORTED = WRITER | CALC | IMPRESS | MARKDOWN | TEXT | ARCHIVE | {"pdf"}
+NO_CONVERT = MARKDOWN | TEXT | ARCHIVE | {"pdf"}
+IMAGE_EXT = {"jpg", "jpeg", "png", "gif", "webp", "bmp"}   # tanpa SVG: bisa berisi skrip
+MAX_ARCHIVE_ENTRIES = 3000
+ARCHIVE_PASSWORD_TTL = 1800
 MAX_TEXT_BYTES = 5 * 1024 * 1024
 
 # Dipakai bila nama file tidak berekstensi (sebagian aplikasi mengirim nama tanpa ekstensi)
@@ -69,6 +76,12 @@ MIME_EXT = {
     "application/xml": "xml",
     "text/xml": "xml",
     "text/html": "html",
+    "application/zip": "zip",
+    "application/x-zip-compressed": "zip",
+    "application/vnd.rar": "rar",
+    "application/x-rar-compressed": "rar",
+    "application/x-rar": "rar",
+    "application/x-7z-compressed": "7z",
 }
 
 ID_RE = re.compile(r"^[A-Za-z0-9_-]{8,40}$")
@@ -85,6 +98,8 @@ def _kind(ext: str) -> str:
         return "markdown"
     if ext in TEXT:
         return "text"
+    if ext in ARCHIVE:
+        return "archive"
     return "pdf"
 
 
@@ -109,6 +124,11 @@ def _sniff_ext(head: bytes) -> str:
             return "xlsx"
         if b"ppt/" in head:
             return "pptx"
+        return "zip"
+    if head.startswith(b"Rar!\x1a\x07"):
+        return "rar"
+    if head.startswith(b"7z\xbc\xaf\x27\x1c"):
+        return "7z"
     # Teks biasa: tanpa karakter kontrol selain tab/baris baru (file biner hampir selalu punya)
     if head and not any(b < 32 and b not in (9, 10, 12, 13) for b in head):
         try:
@@ -132,6 +152,8 @@ class DocsManager:
         self.max_total_bytes = int(cfg.get("max_storage_mb", 3072)) * 1024 * 1024
         self.timeout = int(cfg.get("convert_timeout_sec", 300))
         self.soffice = cfg.get("soffice") or shutil.which("soffice") or shutil.which("libreoffice")
+        self.lsar, self.unar = shutil.which("lsar"), shutil.which("unar")
+        self._archive_pw = {}       # doc_id -> (kata sandi, kedaluwarsa); hanya di memori
         self._lock = None          # dibuat di event loop server (lihat _on_startup)
         self._tasks = {}
         os.makedirs(self.root, exist_ok=True)
@@ -151,6 +173,10 @@ class DocsManager:
         app.router.add_get("/api/docs/{id}/pdf", self.handle_pdf)
         app.router.add_get("/api/docs/{id}/original", self.handle_original)
         app.router.add_get("/api/docs/{id}/text", self.handle_text)
+        app.router.add_get("/api/docs/{id}/entries", self.handle_entries)
+        app.router.add_post("/api/docs/{id}/password", self.handle_password)
+        app.router.add_post("/api/docs/{id}/entries/{index}/open", self.handle_entry_open)
+        app.router.add_get("/api/docs/{id}/entries/{index}/raw", self.handle_entry_raw)
         app.router.add_get("/docs/login-ok", self.handle_login_ok)
         app.router.add_get("/docs/{id}", self.handle_viewer)
         app.on_startup.append(self._on_startup)
@@ -260,21 +286,24 @@ class DocsManager:
             if os.path.exists(tmp):
                 os.unlink(tmp)
             return web.json_response({"error": f"Unggahan terputus: {e}"}, status=400)
+        return self._ingest(tmp, name, ext, size, head, sha.hexdigest())
 
+    def _ingest(self, tmp: str, name: str, ext: str, size: int, head: bytes, digest: str):
+        """File sementara `tmp` menjadi dokumen (atau dipakai ulang bila isinya sudah pernah dibuka)."""
         if size == 0:
             os.unlink(tmp)
             return web.json_response({"error": "File kosong"}, status=400)
         if ext not in SUPPORTED:
             sniffed = _sniff_ext(head)
-            # "txt" hanya untuk file tanpa ekstensi; .zip/.apk dsb. tetap ditolak walau isinya mirip teks
-            if sniffed and (sniffed != "txt" or not ext):
+            # Tebakan "txt"/arsip hanya untuk file tanpa ekstensi: .apk/.jar (isinya ZIP) dsb. tetap ditolak
+            if sniffed and (sniffed not in {"txt"} | ARCHIVE or not ext):
                 ext = sniffed
         if ext not in SUPPORTED:
             os.unlink(tmp)
             label = f".{ext}" if ext else "ini"
             return web.json_response({"error": f"Jenis file {label} belum didukung. Yang bisa dibuka: "
                                                "Word, Excel, PowerPoint, OpenDocument, RTF, CSV, PDF, "
-                                               "Markdown, teks, dan kode."},
+                                               "Markdown, teks, kode, ZIP, RAR, dan 7z."},
                                      status=415)
         if ext in TEXT | MARKDOWN and size > MAX_TEXT_BYTES:
             os.unlink(tmp)
@@ -286,7 +315,6 @@ class DocsManager:
         if not os.path.splitext(name)[1]:
             name = f"{name}.{ext}"
 
-        digest = sha.hexdigest()
         now = int(time.time())
         # Isi sama sudah pernah dibuka: pakai hasil lama (langsung tampil), cukup perbarui nama & waktu
         for meta in self._all_meta():
@@ -302,7 +330,7 @@ class DocsManager:
         meta = {"id": doc_id, "name": name, "ext": ext, "kind": _kind(ext), "size": size, "sha256": digest,
                 "created": now, "opened": now, "status": "converting", "error": None}
         if ext in NO_CONVERT:
-            meta["status"] = "ready"        # PDF, Markdown & teks ditampilkan apa adanya, tanpa konversi
+            meta["status"] = "ready"        # PDF, Markdown, teks & arsip ditampilkan apa adanya, tanpa konversi
         self._save(meta)
         if meta["status"] == "converting":
             self._schedule(doc_id)
@@ -355,6 +383,181 @@ class DocsManager:
         # Selalu text/plain: HTML/JS di dalam file tidak pernah dijalankan browser
         return web.Response(text=text, content_type="text/plain", charset="utf-8",
                             headers={"Cache-Control": "private, max-age=604800", "X-Content-Type-Options": "nosniff"})
+
+    # ---------- Arsip ZIP / RAR / 7z ----------
+    def _archive_path(self, request) -> tuple:
+        meta = self._get_or_404(request)
+        if meta.get("kind") != "archive":
+            raise web.HTTPConflict(text=json.dumps({"error": "Bukan arsip"}), content_type="application/json")
+        if not (self.lsar and self.unar):
+            raise web.HTTPServiceUnavailable(text=json.dumps({"error": "Pembuka arsip (unar) belum terpasang di STB"}),
+                                             content_type="application/json")
+        return meta, os.path.join(self._dir(meta["id"]), f"source.{meta['ext']}")
+
+    def _password(self, doc_id: str) -> str:
+        pw, until = self._archive_pw.get(doc_id, ("", 0))
+        return pw if until > time.time() else ""
+
+    def _list_archive(self, path: str, password: str) -> dict:
+        cmd = [self.lsar, "-j", "-nr"] + (["-p", password] if password else []) + ["--", path]
+        proc = subprocess.run(cmd, capture_output=True, timeout=60)
+        try:
+            data = json.loads(proc.stdout.decode("utf-8", errors="replace"))
+        except ValueError:
+            err = proc.stderr.decode("utf-8", errors="replace") + proc.stdout.decode("utf-8", errors="replace")
+            if "password" in err.lower():
+                return {"need_password": True, "wrong": bool(password)}
+            raise RuntimeError("Arsip rusak atau formatnya tidak dikenali")
+        props = data.get("lsarProperties") or {}
+        entries = []
+        for e in data.get("lsarContents") or []:
+            if e.get("XADIsDirectory") or e.get("XADIsLink"):
+                continue
+            entries.append({"i": e.get("XADIndex"), "name": e.get("XADFileName") or "?",
+                            "size": e.get("XADFileSize") or 0, "enc": bool(e.get("XADIsEncrypted"))})
+            if len(entries) >= MAX_ARCHIVE_ENTRIES:
+                break
+        return {"format": data.get("lsarFormatName", ""), "entries": entries,
+                "encrypted": bool(props.get("XADIsEncrypted")) or any(x["enc"] for x in entries)}
+
+    def _extract_entry(self, path: str, entry: dict, password: str, dest: str) -> tuple:
+        """Keluarkan satu file ke `dest` lewat stdout unar (nama di dalam arsip tidak pernah dipakai sebagai path).
+        unar mode stdout keluar dengan kode 0 walau kata sandi salah (isinya kosong), jadi ukuran hasil
+        dibandingkan dengan ukuran yang tercatat di arsip."""
+        index = entry["i"]
+        cmd = [self.unar, "-q", "-nr", "-o", "-", "-i"] + (["-p", password] if password else []) + ["--", path, str(index)]
+        sha, size, head = hashlib.sha256(), 0, b""
+        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        try:
+            with open(dest, "wb") as f:
+                while True:
+                    chunk = proc.stdout.read(256 * 1024)
+                    if not chunk:
+                        break
+                    size += len(chunk)
+                    if size > self.max_bytes:
+                        proc.kill()
+                        raise ValueError("too_big")
+                    if len(head) < 4096:
+                        head += chunk[:4096 - len(head)]
+                    sha.update(chunk)
+                    f.write(chunk)
+            err = proc.stderr.read().decode("utf-8", errors="replace")
+            code = proc.wait(timeout=120)
+        except Exception:
+            proc.kill()
+            raise
+        if code != 0:
+            raise PermissionError("password") if "password" in err.lower() else RuntimeError("Gagal mengeluarkan file dari arsip")
+        if size != entry.get("size", size):
+            if entry.get("enc"):
+                raise PermissionError("password")
+            raise RuntimeError("Isi arsip rusak atau tidak lengkap")
+        return size, head, sha.hexdigest()
+
+    async def _entry(self, request) -> tuple:
+        meta, path = self._archive_path(request)
+        try:
+            index = int(request.match_info["index"])
+        except ValueError:
+            raise web.HTTPNotFound()
+        listing = await asyncio.get_running_loop().run_in_executor(None, self._list_archive, path, self._password(meta["id"]))
+        entry = next((e for e in listing.get("entries", []) if e["i"] == index), None)
+        if not entry:
+            raise web.HTTPNotFound(text=json.dumps({"error": "File tidak ada di arsip"}), content_type="application/json")
+        return meta, path, entry
+
+    async def handle_entries(self, request):
+        meta, path = self._archive_path(request)
+        try:
+            listing = await asyncio.get_running_loop().run_in_executor(None, self._list_archive, path, self._password(meta["id"]))
+        except (RuntimeError, subprocess.TimeoutExpired) as e:
+            return web.json_response({"error": str(e) or "Arsip tidak bisa dibaca"}, status=422)
+        listing["unlocked"] = bool(self._password(meta["id"]))
+        return web.json_response(listing, headers={"Cache-Control": "no-store"})
+
+    async def handle_password(self, request):
+        meta, path = self._archive_path(request)
+        body = await request.json()
+        password = str((body or {}).get("password", ""))[:256]
+        if not password:
+            return web.json_response({"error": "Kata sandi kosong"}, status=400)
+        loop = asyncio.get_running_loop()
+        listing = await loop.run_in_executor(None, self._list_archive, path, password)
+        if listing.get("need_password"):
+            return web.json_response({"error": "Kata sandi salah"}, status=403)
+        # Uji dengan mengeluarkan file terkecil yang terkunci
+        locked = sorted((e for e in listing["entries"] if e["enc"]), key=lambda e: e["size"])
+        if locked:
+            tmp = os.path.join(self.root, f".pwtest-{secrets.token_hex(6)}")
+            try:
+                await loop.run_in_executor(None, self._extract_entry, path, locked[0], password, tmp)
+            except PermissionError:
+                return web.json_response({"error": "Kata sandi salah"}, status=403)
+            except Exception:
+                pass    # file rusak/terlalu besar: kata sandi tetap dianggap benar
+            finally:
+                if os.path.exists(tmp):
+                    os.unlink(tmp)
+        self._archive_pw[meta["id"]] = (password, time.time() + ARCHIVE_PASSWORD_TTL)
+        return web.json_response({"status": "ok"})
+
+    async def handle_entry_open(self, request):
+        meta, path, entry = await self._entry(request)
+        name = _clean_name(entry["name"].replace("\\", "/").rsplit("/", 1)[-1])
+        ext = os.path.splitext(name)[1].lstrip(".").lower()
+        raw_url = f"/api/docs/{meta['id']}/entries/{entry['i']}/raw"
+        if ext in IMAGE_EXT:
+            return web.json_response({"image": True, "raw": raw_url, "name": name})
+        if ext not in SUPPORTED and ext:
+            return web.json_response({"error": f"File .{ext} belum bisa dibuka di Liliya, tapi bisa diunduh.",
+                                      "download": raw_url, "name": name}, status=415)
+        tmp = os.path.join(self.root, f".upload-{secrets.token_hex(8)}")
+        try:
+            size, head, digest = await asyncio.get_running_loop().run_in_executor(
+                None, self._extract_entry, path, entry, self._password(meta["id"]), tmp)
+        except PermissionError:
+            if os.path.exists(tmp):
+                os.unlink(tmp)
+            return web.json_response({"error": "Arsip ini dikunci kata sandi", "need_password": True}, status=403)
+        except ValueError:
+            os.unlink(tmp)
+            return self._too_big()
+        except Exception as e:
+            if os.path.exists(tmp):
+                os.unlink(tmp)
+            return web.json_response({"error": str(e) or "Gagal membuka file"}, status=422)
+        resp = self._ingest(tmp, name, ext, size, head, digest)
+        if resp.status == 415:
+            return web.json_response({"error": "File ini belum bisa dibuka di Liliya, tapi bisa diunduh.",
+                                      "download": raw_url, "name": name}, status=415)
+        return resp
+
+    async def handle_entry_raw(self, request):
+        meta, path, entry = await self._entry(request)
+        name = _clean_name(entry["name"].replace("\\", "/").rsplit("/", 1)[-1])
+        ext = os.path.splitext(name)[1].lstrip(".").lower()
+        tmp = os.path.join(self.root, f".raw-{secrets.token_hex(8)}")
+        try:
+            await asyncio.get_running_loop().run_in_executor(
+                None, self._extract_entry, path, entry, self._password(meta["id"]), tmp)
+            with open(tmp, "rb") as f:
+                data = f.read()
+        except PermissionError:
+            return web.json_response({"error": "Arsip ini dikunci kata sandi"}, status=403)
+        except ValueError:
+            return self._too_big()
+        except Exception as e:
+            return web.json_response({"error": str(e) or "Gagal mengeluarkan file"}, status=422)
+        finally:
+            if os.path.exists(tmp):
+                os.unlink(tmp)
+        inline = ext in IMAGE_EXT and request.query.get("download") != "1"
+        ctype = mimetypes.types_map.get("." + ext, "application/octet-stream") if inline else "application/octet-stream"
+        disposition = ("inline" if inline else "attachment") + f"; filename*=UTF-8''{quote(name)}"
+        return web.Response(body=data, headers={"Content-Type": ctype, "Content-Disposition": disposition,
+                                                "X-Content-Type-Options": "nosniff", "Cache-Control": "private, no-store",
+                                                "Content-Security-Policy": "sandbox"})
 
     async def handle_original(self, request):
         meta = self._get_or_404(request)

@@ -456,7 +456,10 @@ public class DocumentActivity extends Activity {
 
     @Override
     public void onBackPressed() {
-        if (webView.getVisibility() == View.VISIBLE && webView.canGoBack() && !viewerShown) {
+        String current = webView.getUrl();
+        boolean insideArchive = current != null && Uri.parse(current).getQueryParameter("from") != null;
+        if (webView.getVisibility() == View.VISIBLE && webView.canGoBack() && (!viewerShown || insideArchive)) {
+            // Belum masuk penampil, atau sedang membuka file dari dalam arsip: kembali ke daftar isi
             webView.goBack();
         } else {
             cancelled = true;
