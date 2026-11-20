@@ -27,6 +27,7 @@ Hub rumah pintar berbahasa Indonesia yang berjalan di STB Armbian. Python aiohtt
 ### Selesai
 - Hardening keamanan: cek Origin POST/WS, `_safe_next`, field perangkat terlindungi, host ONVIF dikunci, guard tunnel, APK hanya `content://`, header `X-Liliya-Hub`, backup Android dimatikan. Riwayat git sudah ditulis ulang (clone ulang bila punya salinan lama).
 - CCTV: **bicara langsung** (tahan = bicara, ketuk = terus) dan **panggilan dua arah** (tombol telepon). Jalurnya: WebSocket `/api/cctv/{cam}/talk/live`, lalu PCM 16 kHz, lalu `/api/cctv-feed/{token}` (hanya loopback), lalu go2rtc, lalu backchannel Tapo. Sambungan pertama ±6 dtk. APK ≥ v1.0.23.
+- APK: **pemutar video/musik** (`MediaActivity`, Media3 ExoPlayer 1.4.1). Dari WhatsApp/File Manager, pilih "Buka dengan"/"Bagikan" lalu Liliya, dan file diputar langsung di HP tanpa diunggah. Hanya `content://`. Ide lanjutan: tombol "Putar di TV".
 - Pengecekan status lampu setelah perintah (`core/tuya_bridge.py` `_verify_state`). Diam untuk lampu BLE karena Tuya Cloud tidak melaporkan statusnya.
 
 ### Sedang berjalan: lepas dari Tuya Cloud (free tier habis ±Jan 2027)

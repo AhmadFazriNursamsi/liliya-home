@@ -9,4 +9,12 @@
         <item name="android:windowLightNavigationBar">true</item>
         <item name="android:windowBackground">#FBF6EE</item>
     </style>
+
+    <!-- Pemutar video/musik: latar hitam -->
+    <style name="MediaTheme" parent="android:Theme.Material.NoActionBar">
+        <item name="android:colorAccent">#F7996A</item>
+        <item name="android:statusBarColor">#000000</item>
+        <item name="android:navigationBarColor">#000000</item>
+        <item name="android:windowBackground">@android:color/black</item>
+    </style>
 </resources>
