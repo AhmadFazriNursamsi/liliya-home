@@ -73,6 +73,12 @@ skills:
   default_volume: 80
   media_player: "mpv"
 
+lamp_schedule:
+  # Jadwal harian lampu (ID perangkat seperti di database Liliya). state: on / off
+  - time: "17:40"
+    devices: ["halaman_depan", "lampu_ruang_tamu"]
+    state: "on"
+
 weather:
   # Cuaca rumah dari BMKG. adm4 = kode kelurahan/desa (Permendagri), cek di
   # https://api.bmkg.go.id/publik/prakiraan-cuaca?adm4=<kode>. Contoh: Kemayoran, Jakarta Pusat.

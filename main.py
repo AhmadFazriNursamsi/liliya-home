@@ -23,6 +23,7 @@ from core.web_server import WebServer
 from core.smart_home_db import SmartHomeRealtimeDB
 from core.firebase_bridge import FirebaseRealtimeBridge
 from core.tuya_bridge import TuyaCloudBridge
+from core.lamp_schedule import LampSchedule
 
 from skills.media_player import MediaPlayerSkill
 from skills.weather import WeatherSkill
@@ -186,6 +187,7 @@ def main():
     smart_home_db.set_firebase_bridge(firebase_bridge)
     tuya_bridge = TuyaCloudBridge(config)
     smart_home_db.set_tuya_bridge(tuya_bridge)
+    LampSchedule(config, smart_home_db)
     smart_home_skill = SmartHomeSkill(smart_home_db)
     
     # 4. Inisialisasi Skills Lainnya
