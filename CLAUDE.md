@@ -22,7 +22,7 @@ Hub rumah pintar berbahasa Indonesia yang berjalan di STB Armbian. Python aiohtt
 - **APK:** GitHub Actions membangun otomatis setiap push ke `main` dan menerbitkan Release `apk-vX.Y.Z`. Cek dengan `gh run list` / `gh release list`.
 - Layanan terkait: `stb-assistant` (hub, port 8080), `go2rtc` (CCTV, 127.0.0.1:1984 / rtsp 8554), `cloudflared` (tunnel, ingress `localhost:*`), nginx (situs lain di 127.0.0.1:8090–8092).
 
-## Status pekerjaan (update terakhir 12 Nov 2026)
+## Status pekerjaan (update terakhir 20 Nov 2026)
 
 ### Selesai
 - Hardening keamanan: cek Origin POST/WS, `_safe_next`, field perangkat terlindungi, host ONVIF dikunci, guard tunnel, APK hanya `content://`, header `X-Liliya-Hub`, backup Android dimatikan. Riwayat git sudah ditulis ulang (clone ulang bila punya salinan lama).
@@ -32,15 +32,15 @@ Hub rumah pintar berbahasa Indonesia yang berjalan di STB Armbian. Python aiohtt
 ### Sedang berjalan: lepas dari Tuya Cloud (free tier habis ±Jan 2027)
 - **Titik kembali:** tag git `sebelum-tuya-lokal`, dan di STB `config.yaml.bak-20261112-153051` serta `config.yaml.bak-20261112-154550-sebelum-kunci`.
 - Gateway Bluetooth Tuya (wg2) ada di LAN 192.168.1.3, protokol 3.4. Kunci lokal gateway dan node_id 4 lampu **sudah disimpan** di `config.yaml` STB, bagian `tuya_local`.
-- Uji lokal dengan tinytuya (`Device(gw_id, ip, key, version=3.4, persist=True)`, sub-device `Device(id, cid=node_id, parent=gw)`):
-  - `subdev_query()` OK: keempat lampu online.
-  - `status()` sub-device ditolak gateway ("json obj data unvalid").
-  - `set_value(1, True/False)` ke halaman depan tidak dibalas apa pun. Belum tahu apakah lampunya menyala.
-- **Lampu halaman depan** juga tidak merespons dari Liliya lewat cloud. User sedang mengecek apakah masalahnya hardware (jarak gateway ke lampu, terhalang pintu) atau software.
+- **Kendali lokal BERHASIL (20 Nov 2026)**: ruang tamu terbukti mati/nyala dari STB tanpa cloud.
+  - Lampu Bluetooth ini memakai **DP 1** (`switch_led`), bukan DP 20. Cek pemetaan DP lewat cloud `/v2.0/cloud/thing/{id}/shadow/properties`.
+  - Perintah dikirim sebagai CONTROL_NEW (cmd 13, `protocol:5`, `cid`=node_id). Gateway **tidak pernah membalas** perintah; `status()` sub-device ditolak.
+  - Status nyala/mati di Tuya Cloud untuk lampu ini basi/salah, jadi `sync_now` mengabaikan state cloud untuk perangkat di `tuya_local`.
+- `core/tuya_bridge.py` sekarang: nyala/mati lewat gateway lokal dulu (coba ulang 3x, `tuya_local.retries`), Tuya Cloud sebagai cadangan. Kecerahan masih lewat cloud. `switch_dp` per perangkat bisa diatur di `tuya_local.devices`.
+- Koneksi STB ke gateway 192.168.1.3 **putus-sambung** (ARP kadang gagal, broadcast UDP tetap terlihat). Perlu cek sinyal WiFi gateway.
 - **Langkah berikutnya:**
-  1. Tanyakan hasil cek user.
-  2. Uji perintah lokal ke **ruang tamu** sambil user melihat langsung lampunya.
-  3. Bila berhasil, ubah `core/tuya_bridge.py`: kendali lokal dulu, cloud sebagai cadangan.
+  1. Uji dari APK: ruang tamu, lalu **halaman depan** (dulu tidak merespons, mungkin jarak/hardware).
+  2. Kecerahan lokal (DP 3 `bright_value`, rentang belum diketahui) supaya lepas total dari cloud.
 
 ### Ditunda (atas keputusan user)
 - Pindah penyimpanan perangkat dari `data/smart_home_db.json` ke **SQLite**. Rencananya tabel `devices`, `device_state`, `device_history`, dan `device_secrets` (kunci terpisah, tidak pernah dikirim ke web/Firebase). Kerjakan setelah kendali lokal Tuya berhasil.

@@ -39,7 +39,18 @@ class TuyaCloudBridge:
         self._sync_thread = None
         self._db = None
         self.verify_delays = [int(x) for x in self.config.get("verify_delays", [6, 15])]
-        
+
+        # Kendali lokal lewat gateway Bluetooth Tuya di LAN (tanpa Tuya Cloud). Kunci hanya di config.yaml.
+        local = config.get("tuya_local") or {}
+        self.local_gateway = local.get("gateway") or {}
+        self.local_devices = {tid: d for tid, d in (local.get("devices") or {}).items() if d.get("node_id")}
+        self.local_retries = int(local.get("retries", 3))
+        self._local_lock = threading.Lock()
+        if tinytuya and self.local_devices and all(self.local_gateway.get(k) for k in ("id", "ip", "local_key")):
+            print(f"[TuyaBridge] 🏠 Kendali lokal aktif lewat gateway {self.local_gateway['ip']} untuk {len(self.local_devices)} perangkat.")
+        else:
+            self.local_devices = {}
+
         if self.enabled and self.api_key and self.api_secret and tinytuya:
             try:
                 self.cloud = tinytuya.Cloud(
@@ -74,9 +85,43 @@ class TuyaCloudBridge:
                     print(f"[TuyaBridge] Gagal deteksi DP perangkat '{name}': {e}")
         threading.Thread(target=_detect, daemon=True).start()
 
+    def _send_local(self, tuya_dev_id: str, is_on: bool) -> bool:
+        """Kirim nyala/mati langsung ke gateway di LAN. Gateway tidak pernah membalas perintah,
+        jadi 'berhasil' berarti perintah terkirim tanpa gangguan koneksi. Koneksi ke gateway
+        kadang putus-sambung, karena itu dicoba ulang beberapa kali."""
+        dev = self.local_devices.get(tuya_dev_id)
+        if not dev:
+            return False
+        gw_conf = self.local_gateway
+        dps = {str(dev.get("switch_dp", 1)): is_on}
+        with self._local_lock:
+            for attempt in range(1, self.local_retries + 1):
+                gw = None
+                try:
+                    gw = tinytuya.Device(gw_conf["id"], gw_conf["ip"], gw_conf["local_key"],
+                                         version=float(gw_conf.get("version", 3.4)), persist=True)
+                    gw.set_socketTimeout(5)
+                    gw.set_socketRetryLimit(1)
+                    sub = tinytuya.Device(tuya_dev_id, cid=dev["node_id"], parent=gw)
+                    res = sub._send_receive(sub.generate_payload(tinytuya.CONTROL, dps))
+                    if isinstance(res, dict) and res.get("Err"):
+                        raise ConnectionError(res.get("Error") or res.get("Err"))
+                    print(f"[TuyaBridge] 🏠 Perintah lokal terkirim ke '{dev.get('name', tuya_dev_id)}': {dps}")
+                    return True
+                except Exception as e:
+                    print(f"[TuyaBridge] Kirim lokal ke '{dev.get('name', tuya_dev_id)}' gagal (percobaan {attempt}): {e}")
+                    time.sleep(1.5)
+                finally:
+                    if gw:
+                        try:
+                            gw.close()
+                        except Exception:
+                            pass
+        return False
+
     def push_device_update(self, device_id: str, updates: dict, tuya_id: Optional[str] = None):
-        """Mengirim perintah perubahan state / brightness ke Tuya Cloud secara asynchronous."""
-        if not self.enabled or not self.cloud:
+        """Mengirim perintah perubahan state / brightness: lokal lewat gateway dulu, Tuya Cloud sebagai cadangan."""
+        if not self.enabled or not (self.cloud or self.local_devices):
             return
 
         # ID Tuya disimpan di database perangkat; mapping config.yaml hanya cadangan untuk data lama
@@ -94,9 +139,24 @@ class TuyaCloudBridge:
             self._last_sent_states[tuya_dev_id] = (is_on, time.time())
 
         self._last_command_at[tuya_dev_id] = time.time()
+        updates = dict(updates)
 
         def _worker():
             try:
+                # Nyala/mati: coba lokal dulu. Kecerahan tetap lewat cloud.
+                if "state" in updates and tuya_dev_id in self.local_devices:
+                    is_on = (str(updates["state"]).lower() in ["on", "true", "1", "nyalakan", "buka"])
+                    if self._send_local(tuya_dev_id, is_on):
+                        if self._db:
+                            self._db.set_device_report(device_id, {"unresponsive": False})
+                        if "brightness" not in updates or not self.cloud:
+                            return
+                        updates.pop("state")
+                    else:
+                        print(f"[TuyaBridge] Gateway lokal tidak terjangkau, pakai Tuya Cloud untuk '{device_id}'")
+                if not self.cloud:
+                    return
+
                 commands = []
                 
                 # Cari kode switch yang cocok
@@ -253,7 +313,8 @@ class TuyaCloudBridge:
         for d in devices:
             report = reports.get(d["tuya_id"]) or {}
             # Abaikan status sesaat setelah BUDI mengirim perintah (cloud masih membawa status lama)
-            if now - self._last_command_at.get(d["tuya_id"], 0) < 45:
+            # Perangkat yang dikendalikan lokal: status nyala/mati di cloud tidak ikut berubah (basi), jadi abaikan
+            if now - self._last_command_at.get(d["tuya_id"], 0) < 45 or d["tuya_id"] in self.local_devices:
                 report.pop("state", None)
                 report.pop("brightness", None)
             if report.get("state") == "off":
