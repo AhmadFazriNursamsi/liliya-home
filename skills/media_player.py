@@ -129,24 +129,40 @@ class MediaPlayerSkill:
             station_name = "Prambors FM"
             stream_url = RADIO_STATIONS["prambors"]
 
-        title_display = f"Radio {station_name}"
-        self.current_title = title_display
+        self.play_stream(stream_url, f"Radio {station_name}", stop_first=False)
+        return f"Memutar radio {station_name} sekarang."
+
+    def play_stream(self, stream_url: str, title: str, stop_first: bool = True) -> None:
+        """Memutar siaran radio internet di speaker STB (dipakai perintah suara dan tab Radio)."""
+        if stop_first:
+            self.stop_music()
+        self.current_title = title
         if self.event_bridge:
-            self.event_bridge.broadcast_now_playing(f"⏳ Memutar: {title_display}")
+            self.event_bridge.broadcast_now_playing(f"⏳ Memutar: {title}")
 
         def _play():
             self._wait_for_tts_finish()
             auto_unmute_hardware_audio()
             with self.lock:
+                if self.current_title != title:
+                    return  # sudah diganti/dihentikan sebelum sempat diputar
                 self.is_paused = False
                 cmd = self._get_player_cmd(stream_url)
-                self.current_process = subprocess.Popen(cmd)
-                print(f"[MediaPlayer] 📻 Sedang Memutar Radio di Speaker STB: {station_name}")
+                proc = self.current_process = subprocess.Popen(cmd)
+                print(f"[MediaPlayer] 📻 Sedang Memutar Radio di Speaker STB: {title}")
                 if self.event_bridge:
-                    self.event_bridge.broadcast_now_playing(f"📻 {title_display}")
+                    self.event_bridge.broadcast_now_playing(f"📻 {title}")
+            # Siaran putus / gagal dibuka: kosongkan status "sedang diputar"
+            proc.wait()
+            with self.lock:
+                if self.current_process is proc and self.current_title == title:
+                    self.current_process = None
+                    self.current_title = ""
+                    print(f"[MediaPlayer] 📻 Siaran berhenti: {title}")
+                    if self.event_bridge:
+                        self.event_bridge.broadcast_now_playing("")
 
         threading.Thread(target=_play, daemon=True).start()
-        return f"Memutar radio {station_name} sekarang."
 
     def play_youtube(self, query: str) -> str:
         self.stop_music()

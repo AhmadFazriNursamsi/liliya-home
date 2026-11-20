@@ -12,6 +12,7 @@ from core.push import PushManager
 from core.tapo_control import TapoControlManager
 from core.docs import DocsManager
 from core.unduh import UnduhManager
+from core.radio import RadioManager
 from core.door_lock import DoorLockManager
 
 class WebServer:
@@ -36,6 +37,7 @@ class WebServer:
         self.tapo = TapoControlManager(config)
         self.docs = DocsManager(config, self.base_dir)
         self.unduh = UnduhManager(config, self.base_dir)
+        self.radio = RadioManager(lambda: getattr(self.event_bridge, "media_player", None))
         self.door_lock = DoorLockManager(config, self.base_dir)
         self.door_lock.push = self.push
         self.door_lock.broadcast = self.broadcast
@@ -84,6 +86,7 @@ class WebServer:
 
         # Unduh video dari link (TikTok tanpa watermark, YouTube, Instagram, dll.)
         self.unduh.register_routes(self.app)
+        self.radio.register_routes(self.app)
 
         # Kunci pintu pintar (ESP32 RFID + servo + sensor pintu)
         self.door_lock.register_routes(self.app)

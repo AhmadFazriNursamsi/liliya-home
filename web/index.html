@@ -15,8 +15,8 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="/static/css/liliya.css?v=20261031_v5">
-    <link rel="stylesheet" href="/static/css/home.css?v=20261112_c1">
+    <link rel="stylesheet" href="/static/css/liliya.css?v=20261121_r1">
+    <link rel="stylesheet" href="/static/css/home.css?v=20261121_r1">
 </head>
 <body class="state-idle">
     <div class="app-container" data-tab="assistant">
@@ -199,6 +199,26 @@
             <div class="rt-list" id="unduh-list"><div class="modal-loading"><i class="fa-solid fa-spinner fa-spin"></i> Memuat...</div></div>
         </section>
 
+        <!-- Radio: 20 radio Indonesia terpopuler, diputar di speaker STB -->
+        <section class="tab-panel" id="panel-radio">
+            <div class="panel-head">
+                <div>
+                    <h2>Radio</h2>
+                    <div class="sub" id="radio-summary">Radio Indonesia terpopuler, diputar di speaker rumah</div>
+                </div>
+                <div class="pill-row">
+                    <button class="pill-btn icon" id="btn-radio-refresh" title="Muat ulang" aria-label="Muat ulang"><i class="fa-solid fa-rotate"></i></button>
+                </div>
+            </div>
+            <div class="radio-now" id="radio-now" hidden>
+                <span class="radio-rank"><i class="fa-solid fa-tower-broadcast"></i></span>
+                <span class="rt-info"><small>Sedang diputar di speaker</small><strong id="radio-now-title"></strong></span>
+                <button class="unduh-save" id="btn-radio-stop"><i class="fa-solid fa-stop"></i> Stop</button>
+            </div>
+            <div class="rt-list" id="radio-list"><div class="modal-loading"><i class="fa-solid fa-spinner fa-spin"></i> Memuat...</div></div>
+            <div class="rt-note"><i class="fa-solid fa-circle-info"></i> Urutan berdasarkan jumlah pendengar di direktori Radio Browser (radio-browser.info), bukan rating resmi.</div>
+        </section>
+
         <!-- Modal Tambah / Edit Perangkat -->
         <div class="modal" id="device-modal" role="dialog" aria-modal="true" hidden>
             <div class="modal-card"></div>
@@ -213,9 +233,10 @@
         <button class="tab-btn" data-tab="router"><i class="fa-solid fa-wifi"></i><span>Router</span></button>
         <button class="tab-btn" data-tab="docs"><i class="fa-solid fa-file-lines"></i><span>Dokumen</span></button>
         <button class="tab-btn" data-tab="unduh"><i class="fa-solid fa-download"></i><span>Unduh</span></button>
+        <button class="tab-btn" data-tab="radio"><i class="fa-solid fa-radio"></i><span>Radio</span></button>
     </nav>
 
-    <script src="/static/js/home.js?v=20261112_v29"></script>
+    <script src="/static/js/home.js?v=20261121_r1"></script>
     <script src="/static/js/tv-nav.js?v=20261030_v2"></script>
     <script>
 // =========================================================

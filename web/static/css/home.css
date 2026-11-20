@@ -886,3 +886,13 @@ a.rt-device { text-decoration: none; }
 .track-note { font-size: 0.8rem; color: var(--text-muted); }
 .track-note:empty { display: none; }
 .track-note i { color: var(--red); margin-right: 4px; }
+
+/* ---------- Radio ---------- */
+.radio-row, .radio-now { display: flex; align-items: center; gap: 10px; padding: 10px 6px 10px 10px; border-radius: 16px; background: var(--surface); border: 1px solid var(--border); }
+.radio-now { background: var(--peach-soft); border-color: var(--peach); }
+.radio-row.active { border-color: var(--peach); box-shadow: 0 0 0 1px var(--peach) inset; }
+.radio-rank { flex: 0 0 36px; height: 36px; display: grid; place-items: center; border-radius: 12px; background: var(--peach-soft); color: var(--brown-mid); font-weight: 700; font-size: 0.85rem; }
+.radio-now .radio-rank { background: var(--surface); }
+.radio-row .unduh-save { border: none; cursor: pointer; font-family: inherit; }
+.radio-row .unduh-save.idle { background: var(--surface); border: 1px solid var(--border); color: var(--brown-mid); }
+.radio-now .unduh-save { border: none; cursor: pointer; font-family: inherit; background: var(--surface); }

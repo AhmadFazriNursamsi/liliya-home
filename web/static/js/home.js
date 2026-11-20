@@ -35,7 +35,7 @@ const BudiHome = (() => {
 
     // ---------- Tabs ----------
     function setTab(tab) {
-        if (!['assistant', 'home', 'cctv', 'router', 'docs', 'unduh'].includes(tab)) tab = 'assistant';
+        if (!['assistant', 'home', 'cctv', 'router', 'docs', 'unduh', 'radio'].includes(tab)) tab = 'assistant';
         if (appContainer.dataset.tab !== tab) window.scrollTo(0, 0);
         appContainer.dataset.tab = tab;
         document.querySelectorAll('.tab-btn[data-tab]').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
@@ -45,6 +45,7 @@ const BudiHome = (() => {
         if (tab === 'router') Router.show();
         if (tab === 'docs') Docs.show(); else Docs.hide();
         if (tab === 'unduh') Unduh.show(); else Unduh.hide();
+        if (tab === 'radio') Radio.show();
     }
 
     document.querySelectorAll('.tab-btn[data-tab]').forEach(b => b.addEventListener('click', () => setTab(b.dataset.tab)));
@@ -203,6 +204,8 @@ const BudiHome = (() => {
     function onEvent(data) {
         if (data.type === 'smart_home_sync' && Array.isArray(data.devices)) {
             replaceDevices(data.devices);
+        } else if (data.type === 'now_playing') {
+            Radio.nowPlaying(data.title || '');
         } else if (data.type === 'door_lock' && data.status) {
             DoorLock.update(data.status);
         } else if (data.type === 'smart_home_device_update' && data.device) {
@@ -2048,6 +2051,91 @@ const BudiHome = (() => {
 
         box?.addEventListener('click', e => { if (e.target.closest('#door-toggle')) toggle(); });
         return { load, update: s => { st = s; if (!busy) render(); } };
+    })();
+
+    // ---------- Radio: 20 radio Indonesia terpopuler, diputar di speaker STB ----------
+    const Radio = (() => {
+        const listBox = document.getElementById('radio-list');
+        const nowBox = document.getElementById('radio-now');
+        const nowTitle = document.getElementById('radio-now-title');
+        let stations = [];
+        let playing = '';       // judul dari server: "⏳ Memutar: X", "📻 X", "X", atau ""
+        let loaded = false;
+
+        const cleanTitle = t => String(t || '').replace(/^⏳ Memutar: /, '').replace(/^📻 /, '').trim();
+        const isLoading = () => playing.startsWith('⏳');
+
+        function render() {
+            const name = cleanTitle(playing);
+            nowBox.hidden = !name;
+            nowTitle.textContent = isLoading() ? name + ' (memuat…)' : name;
+            if (!stations.length) return;
+            listBox.innerHTML = stations.map((s, i) => {
+                const active = s.name === name;
+                const meta = [s.place, ...(s.tags || [])].filter(Boolean).slice(0, 3).join(' · ');
+                const btn = active
+                    ? (isLoading() ? '<i class="fa-solid fa-spinner fa-spin"></i> Memuat' : '<i class="fa-solid fa-stop"></i> Stop')
+                    : '<i class="fa-solid fa-play"></i> Putar';
+                return `<div class="radio-row ${active ? 'active' : ''}">
+                        <span class="radio-rank">${i + 1}</span>
+                        <span class="rt-info"><strong>${esc(s.name)}</strong><small>${esc(meta || 'Radio')}</small></span>
+                        <button class="unduh-save ${active ? '' : 'idle'}" data-${active ? 'stop' : 'play'}="${esc(s.uuid)}">${btn}</button></div>`;
+            }).join('');
+        }
+
+        async function load(refresh = false) {
+            try {
+                const data = await api('/api/radio/top' + (refresh ? '?refresh=1' : ''));
+                stations = data.stations || [];
+                playing = data.playing || '';
+                loaded = true;
+                if (!stations.length) listBox.innerHTML = '<div class="empty-note"><i class="fa-solid fa-radio"></i><br>Daftar radio kosong.</div>';
+                render();
+            } catch (e) {
+                listBox.innerHTML = `<div class="empty-note">${esc(e.message)}</div>`;
+            }
+        }
+
+        async function play(uuid) {
+            const s = stations.find(x => x.uuid === uuid);
+            if (!s) return;
+            playing = '⏳ Memutar: ' + s.name;
+            render();
+            try {
+                await api('/api/radio/play', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ uuid })
+                });
+                toast('Memutar ' + s.name + ' di speaker');
+            } catch (e) {
+                playing = '';
+                render();
+                toast(e.message);
+            }
+        }
+
+        async function stop() {
+            playing = '';
+            render();
+            try { await api('/api/radio/stop', { method: 'POST' }); } catch (e) { toast(e.message); }
+        }
+
+        listBox.addEventListener('click', e => {
+            const p = e.target.closest('[data-play]');
+            if (p) return play(p.dataset.play);
+            if (e.target.closest('[data-stop]')) stop();
+        });
+        document.getElementById('btn-radio-stop')?.addEventListener('click', stop);
+        document.getElementById('btn-radio-refresh')?.addEventListener('click', () => {
+            listBox.innerHTML = '<div class="modal-loading"><i class="fa-solid fa-spinner fa-spin"></i> Memuat...</div>';
+            load(true);
+        });
+
+        return {
+            show: () => load(false),
+            nowPlaying: t => { playing = t; if (loaded) render(); }
+        };
     })();
 
     // ---------- Init ----------
