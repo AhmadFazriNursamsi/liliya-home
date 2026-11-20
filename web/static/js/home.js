@@ -1760,7 +1760,7 @@ const BudiHome = (() => {
         const summary = document.getElementById('docs-summary');
         const fileInput = document.getElementById('docs-file');
         const progress = document.getElementById('docs-progress');
-        const KIND = { word: 'Word', sheet: 'Excel', slides: 'PowerPoint', pdf: 'PDF' };
+        const KIND = { word: 'Word', sheet: 'Excel', slides: 'PowerPoint', pdf: 'PDF', markdown: 'Markdown', text: 'Teks' };
         let docs = [];
         let pollTimer = null;
         let visible = false;
@@ -1800,7 +1800,7 @@ const BudiHome = (() => {
                 docs = data.docs;
                 summary.textContent = docs.length
                     ? `${docs.length} dokumen · terhapus otomatis bila 30 hari tidak dibuka`
-                    : (data.office ? 'Buka Word, Excel, PowerPoint & PDF tanpa iklan' : 'Baru PDF yang bisa dibuka (LibreOffice belum terpasang)');
+                    : (data.office ? 'Buka Word, Excel, PowerPoint, PDF & Markdown tanpa iklan' : 'Baru PDF yang bisa dibuka (LibreOffice belum terpasang)');
                 render();
             } catch (e) {
                 listBox.innerHTML = `<div class="empty-note">${esc(e.message)}</div>`;

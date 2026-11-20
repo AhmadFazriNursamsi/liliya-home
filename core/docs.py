@@ -1,8 +1,10 @@
 """Penampil dokumen Office tanpa iklan.
 
-Dokumen (Word, Excel, PowerPoint, OpenDocument, RTF, CSV, TXT, PDF) dikirim dari APK Liliya
+Dokumen (Word, Excel, PowerPoint, OpenDocument, RTF, CSV, PDF) dikirim dari APK Liliya
 ("Buka dengan" / "Bagikan" dari WhatsApp) atau dari tab Dokumen di dashboard, diubah ke PDF oleh
 LibreOffice tanpa GUI di STB, lalu ditampilkan dengan pdf.js (web/docs.html).
+Markdown, teks, dan kode tidak dikonversi: isinya dikirim apa adanya (/api/docs/{id}/text) dan
+ditampilkan langsung di penampil, supaya emoji dan huruf apa pun tampil seperti di HP.
 
 Penyimpanan: data/docs/<id>/{meta.json, source.<ext>, view.pdf}. File yang isinya sama (sha256)
 tidak dikonversi ulang. Dokumen yang tidak dibuka selama `retention_days` dihapus otomatis.
@@ -27,10 +29,15 @@ from aiohttp import web
 # pdf.js dimuat sebagai ES module: browser menolak .mjs yang dikirim sebagai application/octet-stream
 mimetypes.add_type("text/javascript", ".mjs")
 
-WRITER = {"doc", "docx", "docm", "dot", "dotx", "dotm", "odt", "ott", "fodt", "rtf", "txt", "wpd", "wps", "pages"}
+WRITER = {"doc", "docx", "docm", "dot", "dotx", "dotm", "odt", "ott", "fodt", "rtf", "wpd", "wps", "pages"}
 CALC = {"xls", "xlsx", "xlsm", "xlsb", "xlt", "xltx", "ods", "ots", "fods", "csv", "tsv", "numbers"}
 IMPRESS = {"ppt", "pptx", "pptm", "pps", "ppsx", "pot", "potx", "odp", "otp", "fodp", "key"}
-SUPPORTED = WRITER | CALC | IMPRESS | {"pdf"}
+MARKDOWN = {"md", "markdown", "mdown", "mkd"}
+TEXT = {"txt", "log", "json", "xml", "yaml", "yml", "ini", "conf", "cfg", "env", "srt", "vtt", "html", "htm",
+        "py", "js", "ts", "java", "kt", "c", "cpp", "h", "cs", "php", "go", "rs", "sh", "bat", "sql", "css"}
+SUPPORTED = WRITER | CALC | IMPRESS | MARKDOWN | TEXT | {"pdf"}
+NO_CONVERT = MARKDOWN | TEXT | {"pdf"}
+MAX_TEXT_BYTES = 5 * 1024 * 1024
 
 # Dipakai bila nama file tidak berekstensi (sebagian aplikasi mengirim nama tanpa ekstensi)
 MIME_EXT = {
@@ -56,6 +63,12 @@ MIME_EXT = {
     "text/comma-separated-values": "csv",
     "text/tab-separated-values": "tsv",
     "text/plain": "txt",
+    "text/markdown": "md",
+    "text/x-markdown": "md",
+    "application/json": "json",
+    "application/xml": "xml",
+    "text/xml": "xml",
+    "text/html": "html",
 }
 
 ID_RE = re.compile(r"^[A-Za-z0-9_-]{8,40}$")
@@ -68,6 +81,10 @@ def _kind(ext: str) -> str:
         return "sheet"
     if ext in IMPRESS:
         return "slides"
+    if ext in MARKDOWN:
+        return "markdown"
+    if ext in TEXT:
+        return "text"
     return "pdf"
 
 
@@ -92,6 +109,14 @@ def _sniff_ext(head: bytes) -> str:
             return "xlsx"
         if b"ppt/" in head:
             return "pptx"
+    # Teks biasa: tanpa karakter kontrol selain tab/baris baru (file biner hampir selalu punya)
+    if head and not any(b < 32 and b not in (9, 10, 12, 13) for b in head):
+        try:
+            head.decode("utf-8")
+            return "txt"
+        except UnicodeDecodeError as e:
+            if e.start >= len(head) - 4:    # karakter multibyte terpotong di ujung potongan 4 KB
+                return "txt"
     return ""
 
 
@@ -125,6 +150,7 @@ class DocsManager:
         app.router.add_post("/api/docs/{id}/retry", self.handle_retry)
         app.router.add_get("/api/docs/{id}/pdf", self.handle_pdf)
         app.router.add_get("/api/docs/{id}/original", self.handle_original)
+        app.router.add_get("/api/docs/{id}/text", self.handle_text)
         app.router.add_get("/docs/login-ok", self.handle_login_ok)
         app.router.add_get("/docs/{id}", self.handle_viewer)
         app.on_startup.append(self._on_startup)
@@ -239,14 +265,21 @@ class DocsManager:
             os.unlink(tmp)
             return web.json_response({"error": "File kosong"}, status=400)
         if ext not in SUPPORTED:
-            ext = _sniff_ext(head) or ext
+            sniffed = _sniff_ext(head)
+            # "txt" hanya untuk file tanpa ekstensi; .zip/.apk dsb. tetap ditolak walau isinya mirip teks
+            if sniffed and (sniffed != "txt" or not ext):
+                ext = sniffed
         if ext not in SUPPORTED:
             os.unlink(tmp)
             label = f".{ext}" if ext else "ini"
             return web.json_response({"error": f"Jenis file {label} belum didukung. Yang bisa dibuka: "
-                                               "Word, Excel, PowerPoint, OpenDocument, RTF, CSV, TXT dan PDF."},
+                                               "Word, Excel, PowerPoint, OpenDocument, RTF, CSV, PDF, "
+                                               "Markdown, teks, dan kode."},
                                      status=415)
-        if ext != "pdf" and not self.soffice:
+        if ext in TEXT | MARKDOWN and size > MAX_TEXT_BYTES:
+            os.unlink(tmp)
+            return web.json_response({"error": "File teks terlalu besar untuk ditampilkan (maksimal 5 MB)"}, status=413)
+        if ext not in NO_CONVERT and not self.soffice:
             os.unlink(tmp)
             return web.json_response({"error": "LibreOffice belum terpasang di STB, jadi baru PDF yang bisa dibuka."},
                                      status=503)
@@ -268,8 +301,8 @@ class DocsManager:
         os.replace(tmp, os.path.join(self._dir(doc_id), f"source.{ext}"))
         meta = {"id": doc_id, "name": name, "ext": ext, "kind": _kind(ext), "size": size, "sha256": digest,
                 "created": now, "opened": now, "status": "converting", "error": None}
-        if ext == "pdf":
-            meta["status"] = "ready"        # PDF ditampilkan apa adanya, tanpa konversi
+        if ext in NO_CONVERT:
+            meta["status"] = "ready"        # PDF, Markdown & teks ditampilkan apa adanya, tanpa konversi
         self._save(meta)
         if meta["status"] == "converting":
             self._schedule(doc_id)
@@ -305,6 +338,23 @@ class DocsManager:
         # pdf.js mengambil per bagian (Range); id unik per isi, jadi aman di-cache browser
         return web.FileResponse(path, headers={"Content-Type": "application/pdf",
                                                "Cache-Control": "private, max-age=604800"})
+
+    async def handle_text(self, request):
+        meta = self._get_or_404(request)
+        if meta.get("kind") not in ("markdown", "text"):
+            return web.json_response({"error": "Bukan dokumen teks"}, status=409)
+        path = os.path.join(self._dir(meta["id"]), f"source.{meta['ext']}")
+        if not os.path.exists(path):
+            raise web.HTTPNotFound()
+        with open(path, "rb") as f:
+            raw = f.read(MAX_TEXT_BYTES)
+        try:
+            text = raw.decode("utf-8-sig")
+        except UnicodeDecodeError:
+            text = raw.decode("cp1252", errors="replace")   # file lama dari Windows
+        # Selalu text/plain: HTML/JS di dalam file tidak pernah dijalankan browser
+        return web.Response(text=text, content_type="text/plain", charset="utf-8",
+                            headers={"Cache-Control": "private, max-age=604800", "X-Content-Type-Options": "nosniff"})
 
     async def handle_original(self, request):
         meta = self._get_or_404(request)
